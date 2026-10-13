@@ -1,0 +1,56 @@
+rules_version = '2';
+
+// Clients only READ Firestore (realtime listeners + offline cache). Every write goes
+// through the backend service layer (Admin SDK, which bypasses these rules).
+// Tenant isolation: a user only sees garages/{g} when their `garage` claim == g.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function staffOf(g) {
+      return request.auth != null
+        && request.auth.token.garage == g
+        && request.auth.token.role in ['owner', 'mechanic'];
+    }
+    function ownerOf(g) {
+      return staffOf(g) && request.auth.token.role == 'owner';
+    }
+    function customerOf(g, jobId) {
+      return request.auth != null
+        && request.auth.token.role == 'customer'
+        && request.auth.token.garage == g
+        && request.auth.token.job == jobId;
+    }
+
+    match /garages/{g} {
+      allow read: if staffOf(g);
+      allow write: if false;
+
+      // Garage data staff can see live: config, jobs, stages, inventory, quotes, customers, messages, reorders, reorder asks.
+      match /{coll}/{docId} {
+        allow read: if staffOf(g) && coll in ['config', 'jobs', 'inventory', 'quotes', 'customers', 'messages', 'reorders', 'reorder_asks'];
+        allow write: if false;
+      }
+      match /jobs/{jobId}/stages/{stageId} {
+        allow read: if staffOf(g) || customerOf(g, jobId);
+      }
+      // People and the audit trail: owner only (mechanic docs hold PIN hashes).
+      match /mechanics/{uid} {
+        allow read: if ownerOf(g);
+      }
+      match /audit_log/{entry} {
+        allow read: if ownerOf(g);
+      }
+      // A customer's one-job session: their job and its quotes only.
+      match /jobs/{jobId} {
+        allow read: if customerOf(g, jobId);
+      }
+      match /quotes/{quoteId} {
+        allow read: if request.auth != null && request.auth.token.role == 'customer'
+          && request.auth.token.garage == g && resource.data.job_id == request.auth.token.job;
+      }
+      // requests (idempotency records) are backend-only: no rule = denied.
+    }
+    // phone_index is backend-only: no rule = denied.
+    // manuals and manual_chunks (vehicle manual text + embeddings, global) are backend-only: no rule = denied.
+  }
+}

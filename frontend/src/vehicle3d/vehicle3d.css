@@ -1,0 +1,55 @@
+/* 3D vehicle view. Uses the design tokens from styles.css. */
+.v3d { margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.v3d-stage {
+  position: relative; width: 100%; aspect-ratio: 16 / 10; min-height: 220px; max-height: 460px;
+  border-radius: var(--r); overflow: hidden; touch-action: pan-y;
+  background:
+    radial-gradient(120% 90% at 50% 20%, color-mix(in srgb, var(--surface) 70%, #ffffff 30%), transparent 70%),
+    linear-gradient(180deg, color-mix(in srgb, var(--bg) 60%, var(--surface)) 0%, var(--bg) 100%);
+  border: 1px solid var(--line);
+}
+.v3d-compact .v3d-stage { aspect-ratio: 4 / 3; max-height: 360px; }
+.v3d-wash .v3d-stage { background: radial-gradient(110% 90% at 50% 10%, color-mix(in srgb, #9fd3ff 30%, var(--surface)), var(--bg) 75%); }
+.v3d-ok .v3d-stage { background: radial-gradient(110% 90% at 50% 15%, var(--ok-soft), var(--bg) 75%); }
+.v3d-stage canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+.v3d-stage canvas:active { cursor: grabbing; }
+.v3d-loading { position: absolute; inset: 0; display: grid; place-items: center; background: var(--bg); }
+
+.v3d-label { position: absolute; left: 0; top: 0; pointer-events: none; will-change: transform; }
+.v3d-label span {
+  position: absolute; left: 14px; bottom: 10px; white-space: nowrap;
+  padding: 5px 10px; border-radius: 999px; font-size: 13px; font-weight: 650;
+  background: var(--accent); color: var(--accent-ink); box-shadow: var(--shadow);
+}
+.v3d-warn .v3d-label span { background: var(--warn); color: #fff; }
+
+.v3d-hint {
+  position: absolute; right: 10px; bottom: 8px; font-size: 11px; color: var(--muted);
+  background: color-mix(in srgb, var(--surface) 75%, transparent); padding: 3px 8px; border-radius: 999px;
+}
+.v3d-caption { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; }
+.v3d-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+.v3d-warn .v3d-dot { background: var(--warn); box-shadow: 0 0 0 4px var(--warn-soft); }
+.v3d-ok .v3d-dot { background: var(--ok); box-shadow: 0 0 0 4px var(--ok-soft); }
+.v3d-wash .v3d-dot { background: #3aa3ff; box-shadow: 0 0 0 4px color-mix(in srgb, #3aa3ff 25%, transparent); }
+@media (prefers-reduced-motion: no-preference) {
+  .v3d-dot { animation: v3d-ping 1.6s var(--ease) infinite; }
+}
+@keyframes v3d-ping { 50% { box-shadow: 0 0 0 7px transparent; } }
+
+/* Owner: job viewer dialog */
+.v3d-dialog {
+  border: 0; padding: 0; border-radius: var(--r-lg); background: var(--surface); color: var(--text);
+  width: min(920px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); box-shadow: var(--shadow-lg);
+}
+.v3d-dialog::backdrop { background: rgb(10 10 10 / 0.45); backdrop-filter: blur(3px); }
+.v3d-dialog-body { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+.v3d-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.v3d-facts div { background: var(--bg); border-radius: var(--r-sm); padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+.job-card[role='button'] { cursor: pointer; }
+.job-card[role='button']:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Lab page (dev/demo only) */
+.v3d-lab { display: grid; gap: 16px; }
+.v3d-lab-controls { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (min-width: 900px) { .v3d-lab { grid-template-columns: 1fr 1fr; } }

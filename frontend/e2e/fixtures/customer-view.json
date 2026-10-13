@@ -1,0 +1,49 @@
+{
+  "garage": "Shree Auto",
+  "job_id": "J-1042",
+  "vehicle": "Splendor Plus",
+  "plate": "MH12AB1234",
+  "owner": "Ramesh",
+  "stage": "intake",
+  "stage_label": "Checked in",
+  "status": "open",
+  "timeline": [
+    {
+      "name": "intake",
+      "label": "Checked in",
+      "started_at": "2026-10-11T18:54:35+00:00",
+      "minutes": null
+    }
+  ],
+  "quotes": [
+    {
+      "note": "clutch plate worn",
+      "quote_limit": 500,
+      "created_by": "Raju",
+      "lines": [
+        {
+          "qty": 1,
+          "total": 650,
+          "price": 650,
+          "name": "Clutch plate set",
+          "part_id": "clutch-splendor"
+        }
+      ],
+      "text": "Hi Ramesh, quote for your Splendor Plus:\nClutch plate set x1: ₹650\nLabour: ₹300\nTotal: ₹950",
+      "photo": null,
+      "created_at": "2026-10-11T18:54:35+00:00",
+      "status": "pending",
+      "labour": 300,
+      "total": 950,
+      "job_id": "J-1042",
+      "sent_at": "2026-10-11T18:54:35+00:00",
+      "photo_caption": "",
+      "lang": "mr",
+      "customer_id": "c-919800000101",
+      "id": "Q-77"
+    }
+  ],
+  "parts": [],
+  "labour": 0,
+  "bill": 0
+}

@@ -1,0 +1,54 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [5 0 R 7 0 R 9 0 R] /Count 3 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Length 188 >>
+stream
+BT /F1 11 Tf 14 TL 50 780 Td (ZEPHYR Z100 OWNER'S MANUAL) Tj T* (Fictional test manual. Every number here is made up.) Tj T* (Demo Motors thanks you for choosing the Zephyr Z100.) Tj T* ET
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 3 0 R >> >> >>
+endobj
+6 0 obj
+<< /Length 287 >>
+stream
+BT /F1 11 Tf 14 TL 50 780 Td (BATTERY) Tj T* (The Zephyr Z100 battery is a sealed 99 V 42 Ah test battery.) Tj T* (Check the battery terminals for corrosion every month.) Tj T* (SPARK PLUG) Tj T* (Spark plug type ZX-TEST-1. The spark plug gap is 7.7 mm on this fictional model.) Tj T* ET
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 6 0 R /Resources << /Font << /F1 3 0 R >> >> >>
+endobj
+8 0 obj
+<< /Length 255 >>
+stream
+BT /F1 11 Tf 14 TL 50 780 Td (TYRE PRESSURE) Tj T* (Front tyre pressure 123 psi. Rear tyre pressure 456 psi. Check when the tyres are cold.) Tj T* (ENGINE OIL) Tj T* (Engine oil grade ZZ-99 test oil. Engine oil quantity 9.9 litres at oil change.) Tj T* ET
+endstream
+endobj
+9 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 8 0 R /Resources << /Font << /F1 3 0 R >> >> >>
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000127 00000 n 
+0000000197 00000 n 
+0000000436 00000 n 
+0000000562 00000 n 
+0000000900 00000 n 
+0000001026 00000 n 
+0000001332 00000 n 
+trailer
+<< /Size 10 /Root 1 0 R >>
+startxref
+1458
+%%EOF

@@ -1,0 +1,25 @@
+[project]
+name = "garage-copilot-backend"
+version = "0.1.0"
+description = "GarageCopilot backend: FastAPI + ADK on Cloud Run"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.141.1",
+    "firebase-admin>=7.7.0",
+    "google-adk>=2.11.0",
+    "google-cloud-firestore>=2.34.1",
+    "google-cloud-storage>=3.17.0",
+    "google-genai>=2.29.0",
+    "pypdf>=6.20.0",
+    "uvicorn>=0.54.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

@@ -1,0 +1,9 @@
+{
+  "_about": "Test catalog for the FICTIONAL Zephyr Z100 manual (tests only).",
+  "zephyr-z100-owners-manual.pdf": {
+    "title": "Zephyr Z100 owner's manual",
+    "make": "Demo Motors",
+    "models": ["Zephyr Z100"],
+    "kind": "owner"
+  }
+}

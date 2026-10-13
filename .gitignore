@@ -1,0 +1,14 @@
+node_modules/
+.env
+.DS_Store
+__pycache__/
+.venv/
+*.pyc
+.pytest_cache/
+*-debug.log
+dist/
+test-results/
+playwright-report/
+.env.local
+# Manufacturer manuals: copyrighted, never commit (see changes.md C08)
+backend/manuals/pdf/

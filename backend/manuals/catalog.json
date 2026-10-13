@@ -1,0 +1,27 @@
+{
+  "_about": "Owner's manuals (PDF) the manuals-ingest job imports, by exact file name. The PDFs are copyrighted and never committed: they live in gs://<GCS_BUCKET>/manuals/ (dev: backend/manuals/pdf/). A PDF not listed here is skipped. Procedure sheets (procedures/*.md) carry the same fields in their front matter.",
+  "Hero-Splendour-Plus-owner's-manual.pdf": {
+    "title": "Splendor Plus owner's manual",
+    "make": "Hero",
+    "models": ["Splendor", "Splendor Plus"],
+    "kind": "owner"
+  },
+  "Honda-activa-6g-owner's manual.pdf": {
+    "title": "Activa 6G owner's manual",
+    "make": "Honda",
+    "models": ["Activa", "Activa 6G"],
+    "kind": "owner"
+  },
+  "Bajaj-pulsar-owner's-manul.pdf": {
+    "title": "Pulsar 150 owner's manual",
+    "make": "Bajaj",
+    "models": ["Pulsar", "Pulsar 150"],
+    "kind": "owner"
+  },
+  "maruti-swift-owner's-manual.pdf": {
+    "title": "Swift owner's manual",
+    "make": "Maruti Suzuki",
+    "models": ["Swift"],
+    "kind": "owner"
+  }
+}

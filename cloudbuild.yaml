@@ -1,0 +1,77 @@
+# Test, build and deploy the backend to Cloud Run, plus the manuals-ingest Cloud Run Job (same image).
+# Trigger: push to main (Cloud Build GitHub trigger).
+# Manual: gcloud builds submit --config cloudbuild.yaml --substitutions=SHORT_SHA=manual
+# Needs (once, see tasks.md "Blocked"): Artifact Registry repo, secrets in Secret Manager, runtime service account.
+substitutions:
+  _REGION: asia-south1          # Mumbai. Vertex Live API must be available in GOOGLE_CLOUD_LOCATION below.
+  _SERVICE: garage-copilot
+  _REPO: garage-copilot          # Artifact Registry docker repo
+  _RUNTIME_SA: garage-copilot-run@${PROJECT_ID}.iam.gserviceaccount.com
+  _GENAI_LOCATION: us-central1
+  _GCS_BUCKET: ${PROJECT_ID}-garage-photos
+  _PUBLIC_BASE_URL: https://${PROJECT_ID}.web.app
+  _SCHEDULER_SA: garage-copilot-scheduler@${PROJECT_ID}.iam.gserviceaccount.com
+  _SCHEDULER_AUDIENCE: ""       # https://<service-url>/api/tasks/sweep once the URL is known
+  _EMBED_MODEL: gemini-embedding-001
+  _EMBED_DIM: "768"             # must match the vector index on manual_chunks (firestore.indexes.json)
+  _TRANSCRIBE_MODEL: gemini-2.5-flash   # reads each manual page (scans and spec tables) for manuals-ingest
+  _TRANSCRIBE_WORKERS: "4"
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  dynamic_substitutions: true   # lets the defaults above use ${PROJECT_ID}
+
+steps:
+  - id: test
+    name: mirror.gcr.io/library/python:3.12-slim
+    dir: backend
+    entrypoint: sh
+    args: ["-c", "pip install -q 'uv==0.11.*' && uv sync --frozen && uv run pytest -q"]
+
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args: ["build", "-t", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}:${SHORT_SHA}", "backend"]
+
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args: ["push", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}:${SHORT_SHA}"]
+
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}:${SHORT_SHA}
+      - --region=${_REGION}
+      - --service-account=${_RUNTIME_SA}
+      - --allow-unauthenticated          # the app checks Firebase ID tokens / signed links itself
+      - --min-instances=1                # demo: no cold start mid-sentence
+      - --timeout=3600                   # long-lived voice WebSockets
+      - --session-affinity
+      - --set-env-vars=GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${_GENAI_LOCATION},GOOGLE_GENAI_USE_VERTEXAI=TRUE,DB_BACKEND=firestore,GCS_BUCKET=${_GCS_BUCKET},PUBLIC_BASE_URL=${_PUBLIC_BASE_URL},SCHEDULER_SA_EMAIL=${_SCHEDULER_SA},SCHEDULER_AUDIENCE=${_SCHEDULER_AUDIENCE},EMBED_MODEL=${_EMBED_MODEL},EMBED_DIM=${_EMBED_DIM}
+      - --set-secrets=LINK_SECRET=link-secret:latest
+
+  # Imports vehicle manuals from gs://<bucket>/manuals/ into Firestore (C08). Deploying does not run it:
+  # gcloud run jobs execute manuals-ingest --region=<region> --wait   (see backend/README.md)
+  - id: deploy-manuals-ingest
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args:
+      - run
+      - jobs
+      - deploy
+      - manuals-ingest
+      - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}:${SHORT_SHA}
+      - --region=${_REGION}
+      - --service-account=${_RUNTIME_SA}
+      - --command=python
+      - --args=-m,app.manuals_ingest
+      - --tasks=1
+      - --max-retries=1
+      - --task-timeout=3600
+      - --set-env-vars=GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${_GENAI_LOCATION},GOOGLE_GENAI_USE_VERTEXAI=TRUE,DB_BACKEND=firestore,GCS_BUCKET=${_GCS_BUCKET},MANUALS_SOURCE=gs://${_GCS_BUCKET}/manuals/,EMBED_MODEL=${_EMBED_MODEL},EMBED_DIM=${_EMBED_DIM},TRANSCRIBE_MODEL=${_TRANSCRIBE_MODEL},TRANSCRIBE_WORKERS=${_TRANSCRIBE_WORKERS}
+
+images:
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE}:${SHORT_SHA}
