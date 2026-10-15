@@ -43,6 +43,8 @@ def check_mechanic_pin(garage_id: str, name: str, pin: str) -> dict:
         person = get_doc(ref)
     except NotFound:
         raise Forbidden("wrong name or PIN")
+    if person.get("active") is False:
+        raise Forbidden("this account is switched off; ask the owner")
     if person.get("pin_fails", 0) >= MAX_PIN_FAILS:
         raise Forbidden("too many wrong PINs; ask the owner to reset")
     if not person.get("pin_hash") or not check_pin(pin, person["pin_hash"]):
@@ -56,4 +58,8 @@ def lookup_phone(phone: str) -> dict:
     snap = phone_ref(phone).get()
     if not snap.exists:
         raise Forbidden("this phone number has not been invited by a garage")
-    return snap.to_dict()
+    invite = snap.to_dict()
+    person = mechanic_ref(invite["garage_id"], invite["uid"]).get().to_dict() or {}
+    if person.get("active") is False:
+        raise Forbidden("this account is switched off; ask the owner")
+    return invite

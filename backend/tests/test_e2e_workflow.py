@@ -48,14 +48,12 @@ def test_demo_job_end_to_end(fake_db, monkeypatch):
     assert link_msg["channel"] == "whatsapp" and link_msg["text"].startswith("[Marathi] Hi Ramesh, your Splendor Plus")
     token = link_msg["text"].rsplit("/j/", 1)[1]
 
-    # 2. Stage updates: "Moving it to washing." / "Started service."
-    clock.at("10:23")
-    say(tools.update_stage, "washing", "")
-    clock.at("10:41")
+    # 2. Stage update: "Started service." (washing comes later, after the repair: C10)
+    clock.at("10:20")
     assert say(tools.update_stage, "service", "")["previous_minutes"] == 18
     page = api.get(f"/api/j/{token}").json()
-    assert [t["label"] for t in page["timeline"]] == ["Checked in", "Washing", "In service"]
-    assert page["timeline"][1]["minutes"] == 18
+    assert [t["label"] for t in page["timeline"]] == ["Checked in", "In service"]
+    assert page["timeline"][0]["minutes"] == 18
 
     # 3. Stock check: "Do we have a clutch plate for Splendor? Price?" -> "Two in stock, ₹650, labour ₹300."
     clock.at("10:52")
@@ -99,6 +97,11 @@ def test_demo_job_end_to_end(fake_db, monkeypatch):
     ask = say(tools.ask_owner_to_reorder, "clutch-splendor")
     assert ask["text"] == "Clutch plate set down to 1. Reorder 5 from Sai Spares?"
     assert messages("reorder_ask")[0]["channel"] == "owner_app"
+    # 7. "Moving it to washing." after the repair, then "Job done."
+    clock.at("11:45")
+    assert say(tools.update_stage, "washing", "")["previous_minutes"] == 85
+    assert [t["label"] for t in api.get(f"/api/j/{token}").json()["timeline"]] == ["Checked in", "In service", "Washing"]
+    clock.at("11:58")
     closed = say(tools.close_job, "")
     assert closed["bill"] == 950
     part = inventory.part_ref(G, "clutch-splendor").get().to_dict()
@@ -119,8 +122,7 @@ def test_demo_job_end_to_end(fake_db, monkeypatch):
     assert sorted(trail) == [
         ("10:02", "create_job", "Raju"),
         ("10:02", "get_vehicle_history", "Raju"),
-        ("10:23", "update_stage", "Raju"),
-        ("10:41", "update_stage", "Raju"),
+        ("10:20", "update_stage", "Raju"),
         ("10:52", "check_stock", "Raju"),
         ("10:58", "add_photo", "Raju"),
         ("10:58", "describe_photo", "Raju"),
@@ -128,6 +130,7 @@ def test_demo_job_end_to_end(fake_db, monkeypatch):
         ("10:58", "send_quote", "Raju"),
         ("11:07", "quote_approved", "Ramesh"),
         ("11:40", "ask_reorder", "Raju"),
-        ("11:40", "close_job", "Raju"),
         ("11:40", "log_part_used", "Raju"),
+        ("11:45", "update_stage", "Raju"),
+        ("11:58", "close_job", "Raju"),
     ]

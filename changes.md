@@ -1,15 +1,18 @@
-# Changes requested after the first local run (Oct 11, 2026)
+# Changes requested after the first local run (Oct 11, 2026) and the first Google Cloud deploy (Oct 15, 2026)
 
 ## Where things stand (read first)
 
-- **Done and merged into `main`:** backend T01–T27, frontend F01–F10, the 3D vehicle view (F11), and the changes
-  below, C01–C07 (merged Oct 12 as PR #3). See `tasks.md` for the notes on each.
-- The team ran real Gemini voice locally after the merge: voice works and C01–C07 behave as intended.
-- **Next: C08 (vehicle manual lookup, at the bottom of this file).** That's the only open item here. Do C08 only.
-- The 3D view lives in `frontend/src/vehicle3d/`. Don't rebuild or restyle it; keep it working.
+- **Done and merged into `main`:** backend T01–T27, frontend F01–F10, the 3D vehicle view (F11), the owner's 3D
+  garage floor (F12, `frontend/src/garage3d/`), and C01–C08b below (manual lookup merged Oct 13). See `tasks.md`.
+- The team deployed to Google Cloud (Cloud Run + Firebase Hosting) and found the issues **C09–C17** (bottom of this
+  file). **Do C09–C17 only, in that order** (C10 is a bug; the rest are features). Each one is its own commit.
+- The 3D views live in `frontend/src/vehicle3d/` and `frontend/src/garage3d/`. Keep them working; update them where a
+  change below says so (e.g. the stage order in C10).
+- Deadline: submission **Oct 18, 2026**. If you run out of time, finish and push the completed tasks; never leave
+  `main`-bound work half-done in one commit.
 
 Found by the team running the app locally with the real backend, the Firestore emulator and real Gemini (Vertex AI).
-Work these as tasks **C01–C08** (C01–C07 done): add them to `tasks.md` (new section "Changes after first local run"), then follow
+Work these as tasks **C01–C16** (C01–C08b done): add them to `tasks.md` (new section "Changes after first local run"), then follow
 the usual loop from `AGENTS.md` (one task per commit, tests, tick with a note, push). Keep the code simple.
 
 Important: several of these only show up with the **real** backend and Gemini, not in demo mode. Don't mark a task
@@ -329,3 +332,206 @@ doc. It's **manual lookup, not diagnosis**: the agent quotes specs and steps; it
   - real-voice check with these questions: battery voltage and capacity, spark plug gap, front/rear tyre pressure,
     engine oil grade and quantity, clutch lever free play, "How do I replace the clutch plates?", and one question
     that is NOT in the manual (must answer "not in the manual").
+
+---
+
+# Found after the first Google Cloud deploy (Oct 15, 2026)
+
+Work on **one new branch** and open **one PR** for C09–C17; don't push to `main`. Add C09–C17 to `tasks.md` (new section
+"Changes after the first cloud deploy"). Tests must still run without GCP. Where only a human can verify (real voice,
+real phone calls), say exactly what to check under "Blocked / needs a human".
+
+## C09: Owner Settings page (the auto-approve limit is a setting the owner controls)
+
+**Context:** quotes at or below the garage's `quote_limit` are approved automatically and never reach the customer
+(`services/quotes.send_quote`). That rule stays, but the owner had no way to see or change the limit. The team wants
+it as a setting in the app.
+
+- New owner tab **Settings** (`/owner/settings`) with a short explanation per field and Save:
+  - **Auto-approve limit (₹):** "Quotes up to this amount are approved without asking the customer. 0 = always ask
+    the customer." (field `quote_limit`, keep the name).
+  - Garage name and city; default customer language; supplier name; reorder quantity; low-stock level (default `low_at`
+    for parts that don't set their own).
+- Backend: `GET /api/owner/settings` and `PUT /api/owner/settings` (owner only, tenant-checked, validated: limit 0 to
+  1,00,000, whole rupees), written through the service layer with an `audit_log` entry ("Asha changed the auto-approve
+  limit from ₹500 to ₹0").
+- `send_quote` reads the **current** garage setting when the quote is sent (not the copy stored on the job when it was
+  created), so a change applies to the next quote immediately.
+- When a quote is auto-approved, the mechanic hears "Approved automatically: within the ₹X limit", the quote shows on
+  the customer page as approved automatically, and the owner's activity feed says so. (No change to who gets messages.)
+- The owner voice agent can answer "what's my auto-approve limit?" (read-only; changing settings stays in the UI).
+- Tests: settings read/write/validation/audit, send_quote uses the current setting, owner-only access.
+
+## C10: Washing comes last, just before delivery (bug in the flow)
+
+Real garages wash after the repair. New stage order everywhere:
+**intake → service → waiting_approval → washing → ready → done.**
+- Backend: `jobs.STAGES`, stage labels, `jobs_by_stage` order, any "next stage" logic, agent instructions and examples
+  ("Moving it to washing" now comes after service), the vehicle-history and owner tools.
+- Frontend: customer timeline order, owner board columns (Checked in → In service → Washing → Ready), demo script
+  (`src/demo/voice.js`: service and the quote happen before washing; then "washing", then "job done"), demo seed,
+  `diagrams/job-workflow` text if it lists the order (update the .excalidraw labels only if simple; otherwise note it).
+- 3D: `garage3d/layout.js` and `garageScene.js`: station order on the floor becomes front door → service bays → wash
+  bay → delivery (move the wash arch/zone next to delivery). `vehicle3d` stage effects unchanged.
+- Tests: stage order, demo script end-to-end (vitest + Playwright demo spec), layout tests.
+
+## C11: Language guardrails: always answer in the language the person just used
+
+**Problem:** the agent sometimes answers in a different language from the one it was spoken to in.
+**Rule:** reply in the language of the user's **latest** turn: English → English, Hindi → Hindi, Marathi → Marathi,
+Hinglish → Hinglish (any language Gemini Live supports follows the same rule). Never switch on its own, not even
+because the customer's language, a tool result or earlier turns are in another language. Names, plates, part names and
+numbers stay as they are.
+- **Instruction:** make this the first and strictest rule for the mechanic agent and the owner agent, with short
+  examples (English question → English answer even if the customer speaks Marathi; Hindi question → Hindi answer).
+  Tool results that contain other languages (e.g. a Marathi quote text) are summarised in the user's language.
+- **Pinned language option:** a language picker on the mechanic and owner voice screens: Auto (default, follow the
+  speaker) / English / हिंदी / मराठी. A pinned language is sent with the session start and the gateway sets it in the
+  Live config (speech language code, if the model supports it; check the current google-genai `SpeechConfig` /
+  Live docs) **and** as an instruction line "Always answer in <language>". Remember the choice per device.
+- **Guardrail check:** the gateway already has input and output transcriptions. Add a light check: if the output
+  transcription's script clearly differs from the input's (e.g. Devanagari vs Latin) for a turn in Auto mode, log
+  `language mismatch` with both snippets and, for the next turn only, add a one-line system reminder to the session.
+  No heavy language-detection library: a script check (Devanagari vs Latin characters) is enough; Hindi vs Marathi
+  can't be told apart this way, so leave those to the instruction.
+- Tests: instruction text, pinned language reaches the Live config, the script check (English vs Devanagari).
+  Real-voice check under Blocked.
+
+## C12: Customer page: English by default, Hindi switch
+
+- The customer page (`/j/:token`) is **English by default**, with a visible **English | हिंदी** switch in the header.
+  The choice is remembered on that device. All page text (headings, stage names, buttons, toasts, bill labels) has
+  English and Hindi strings: a small `src/i18n.js` dictionary, no i18n library.
+- Quote and message texts on the page: show the English text by default and the Hindi version when Hindi is chosen.
+  Backend: the customer view returns `text_en` and `text_hi` for quotes and messages (translate once when the quote is
+  sent, with the existing `gemini.translate`, and store both). Keep the WhatsApp/notify message in the customer's
+  language setting as today, but new customers default to `lang: "en"` unless the mechanic says otherwise.
+- Tests: the switch, both strings present for every key (a test that fails on a missing Hindi key), the view returns
+  both texts.
+
+## C13: Consumables (nuts, bolts, gaskets…) are used with a part and must show in stock and cost
+
+**Problem:** fitting a clutch plate also uses a gasket, bolts, washers, oil and so on. Today only the main part leaves
+stock, so the owner can't see what a job really costs.
+- Inventory items get an optional **`with`** list: consumables used each time the part is fitted, e.g.
+  `clutch-splendor.with = [{part_id: "gasket-clutch-cover", qty: 1}, {part_id: "bolt-m6", qty: 4}, {part_id:
+  "engine-oil-800", qty: 1}]`. Each consumable is a normal inventory item with `kind: "consumable"`, a price, a cost
+  (`cost` = what the garage paid) and `billable` (true: charged to the customer, false: garage's own cost).
+- `log_part_used` decrements the main part **and** its consumables (qty × parts fitted) in one service call, adds
+  billable ones to the bill as their own lines, and records non-billable ones on the job as `consumables` with their
+  cost. Idempotent like today (same request_id = no second decrement). If a consumable is out of stock, still log the
+  main part, record the shortfall and flag it as low stock (the agent says so in one short line).
+- `draft_quote` includes billable consumables as lines, so the customer sees the real total before approving.
+- Owner: job viewer and dashboard show **parts + consumables + labour = bill** and **cost of parts used** (from
+  `cost`), and the margin per job; the Stock tab lists consumables with their own low-stock flags; the owner voice
+  agent can answer "what did J-1042 cost us?".
+- Seed realistic consumables for both garages (gaskets, M6/M8 bolts, washers, split pins, grease, chain lube, engine
+  oil top-up) and `with` lists for the common jobs (clutch plate, brake shoes, chain kit, oil change). Prices clearly
+  plausible, not from any real catalogue.
+- Agent: when logging a part, it reads back the main part only, plus "and the usual fittings" if there are any; it
+  doesn't list every bolt aloud.
+- Tests: decrement of part + consumables, billing split, idempotency, shortfall, quote lines, owner cost/margin.
+
+## C14: Manual first, then (with the mechanic's OK) a web search for known fixes
+
+**Flow** for questions about a specific problem or spec:
+1. Call `lookup_manual` first (as today).
+2. If the manual has it: answer from it with the page (as today).
+3. If not: say it isn't in the manual and **ask** "Shall I search online for known causes and fixes?" Do nothing until
+   the mechanic says yes.
+4. On yes: call a new **`web_search_fixes(question, vehicle)`** tool. It runs a small sub-agent on TEXT_MODEL with ADK's
+   built-in **`google_search`** tool (Gemini grounding with Google Search). Built-in tools can't sit on the same agent as
+   function tools, so it is its own agent wrapped as an AgentTool, like the Quote/Comms sub-agents. It returns 2–3
+   short "common causes and known fixes" points with the source site names.
+5. The Live agent speaks them briefly, says they're **from the web, not the manual**, one step at a time, and never
+   presents them as a diagnosis. Safety rule: anything about brakes, fuel leaks or electrical/EV high-voltage parts
+   ends with "check against the workshop manual".
+- The transcript chip shows "Web · <site names>" (like the "Manual · …" chip); the audit log records the search.
+- Config: `WEB_SEARCH_MODEL` (default TEXT_MODEL). Check the current ADK docs for `google_search` usage with Vertex AI.
+- Tests: stub the sub-agent; the instruction contains the ask-first rule; the tool is never called without a "yes"
+  turn (check the instruction and the tool's guard: it requires `confirmed=True`, which the agent passes only after
+  the mechanic agreed).
+- Demo mode: one scripted exchange (manual miss → "search online?" → "yes" → two made-up fixes clearly labelled demo).
+
+## C15: AI front desk: customers can call the garage and the AI answers
+
+A customer calls the garage; the AI answers in the caller's language and can:
+- tell them their vehicle's status (look up by the caller's phone number or plate),
+- send them their status link or the pending quote again (via `notify()`, like today),
+- take a request for a price: draft an estimate from stock prices for common jobs and send it **to the owner for
+  confirmation** (owner sees it as an agent ask on the dashboard; on confirm it goes to the customer),
+- take a message / book a drop-off time (a simple `bookings` collection the owner sees),
+- "transfer": when it can't help, it creates a callback request for the owner ("Call back Ramesh about …") and tells
+  the caller someone will call back. No real call transfer.
+
+**How (Google stack, no new paid service needed for the demo):**
+- A new **`front_desk`** ADK agent (Live model, its own small tool set over the existing services; read-only except
+  `send_status_link`, `send_quote_again`, `request_estimate`, `book_dropoff`, `request_callback`). Callers are
+  identified only by phone number; it never reveals another customer's data.
+- **Web call** for the demo: a "Call the garage" button on the customer page and on the landing page (C16) opens a
+  voice call to `/ws/voice` with role `caller` (short-lived anonymous token tied to the garage; rate-limited).
+- **Real phone line (document, don't build):** README section on connecting a phone number later through a telephony
+  provider that streams call audio over WebSockets (e.g. Twilio Media Streams or Exotel) into the same gateway, with
+  the audio format conversion needed (8 kHz μ-law ↔ 16 kHz PCM). Note it under Blocked as a post-hackathon step.
+- Owner: a "Calls" list on the dashboard (who called, summary, what the AI did, callback requests); activity feed lines.
+- Tests: tool isolation (a caller can only see their own jobs), estimate goes to the owner first, callback created,
+  the gateway picks the front-desk agent for role `caller`. Demo mode: a scripted call.
+
+## C16: A landing page that explains the product in seconds, then "Try it"
+
+Today `/` is a small home page with role cards. Replace it with a real product landing page for judges and new
+visitors, then lead into the hands-on part.
+- **Few words, mostly visuals.** Sections:
+  1. Hero: one line ("The AI co-worker for India's garages: mechanics talk, it does the paperwork, customers approve
+     from their phone") + a short looping animation of the flow (mechanic speaks → job card appears → customer approves
+     on a phone → owner's floor updates).
+  2. The problem in three relatable picture cards (greasy hands and a ringing phone; a customer worried about a surprise
+     bill; an owner with no idea what's on the floor). One short sentence each.
+  3. How it works: a simple diagram (SVG, built in the page, no image files needed) of mechanic ↔ voice agent ↔
+     customer page ↔ owner floor, with the manual lookup and approvals marked.
+  4. What makes it different: 3–4 tiles (hands-free in Hindi/Marathi/English; nothing done without the customer's OK;
+     answers from the vehicle's manual; live 3D view of the garage).
+  5. **Try it**: three cards (Mechanic · Customer · Owner), each saying exactly what you'll do and see there ("Hold the
+     orb and say: …", "Approve a quote", "Watch the floor live"), plus the "Call the garage" button from C15. In demo
+     mode these open the demo; in production they open the real screens.
+  6. A small footer: built on Gemini, ADK, Cloud Run, Firestore.
+- Design: use the existing tokens and type (`styles.css`), the orange accent, light and dark mode; fast (no new heavy
+  libraries; reuse three.js only lazily if at all); great on phones and on a laptop; respects reduced motion.
+- The "Try it" screens must then match what the page promised: check the copy against the real flows.
+- Tests: Playwright (phone + desktop): the page renders, no sideways scroll, each Try-it card opens the right screen.
+
+## C17: Owner records: transactions, vehicles, customers, staff
+
+**Problem:** the owner can see today, the floor and stock, but none of the garage's records: past jobs and bills,
+vehicle history, the customer list, employees and what they've done. The data is already in Firestore (`jobs`,
+`customers`, `mechanics`, `audit_log`, `quotes`); this is about showing it well.
+
+New owner tabs (the tab bar scrolls sideways on phones; keep Today first): **Today · Floor · Jobs · Customers ·
+Vehicles · Staff · Stock · Settings**.
+- **Jobs (transactions):** every job, newest first, with filters (today / this week / this month / custom dates; open /
+  closed; mechanic) and search (plate, customer, job id). Each row: date, job id, vehicle + plate, customer, mechanic,
+  status, bill (parts, consumables from C13, labour), time taken. Totals for the filter at the top (jobs, revenue,
+  average bill, average time). Click → the job detail (timeline with time per stage, parts, quotes and decisions,
+  messages sent, photos, 3D view). **Export CSV** for the current filter.
+- **Customers:** name, phone, language, vehicles, number of visits, total spent, last visit; search; click → their
+  vehicles and jobs, and a "Send status link" for an open job.
+- **Vehicles:** every plate the garage has seen: model, owner, visits, last service date and what was done, total spent;
+  click → full service history (the same data `get_vehicle_history` uses).
+- **Staff:** how many mechanics, and for each: jobs finished (today / this week / this month), jobs open now, average
+  time per job, revenue on their jobs, parts logged, last active; a simple bar chart per mechanic for the period.
+  **Add mechanic** (name, phone, PIN) using the existing `POST /api/owner/mechanics` (`people.invite_mechanic`), and
+  deactivate a mechanic (they can no longer sign in; their history stays).
+- Backend: owner-only, tenant-checked read endpoints in `routes_owner.py` over the service layer: `GET
+  /api/owner/jobs?from=&to=&status=&mechanic=&q=&cursor=` (paginated, 50 per page), `GET /api/owner/customers`, `GET
+  /api/owner/customers/{id}`, `GET /api/owner/vehicles`, `GET /api/owner/vehicles/{plate}`, `GET
+  /api/owner/staff?period=`, `POST /api/owner/mechanics/{uid}/deactivate`. Compute aggregates on read for now (small
+  garages); keep them in one module (`services/reports.py`) so moving to stored daily totals later is a contained
+  change. Add any Firestore composite indexes the queries need to `firestore.indexes.json` and list them under Blocked.
+- Owner voice agent: read-only tools for "how many jobs did Raju finish this week?", "how much did we make this
+  month?", "when did MH12AB1234 last come in?".
+- Demo mode: the demo backend answers the same endpoints from the demo store; add a few weeks of plausible closed
+  jobs, customers and vehicles to the demo seed so the pages aren't empty (keep the demo job script unchanged).
+- Design: same look as the dashboard (cards, tables that turn into cards on phones, no sideways scroll), loading and
+  empty states, numbers formatted in ₹ and Indian digit grouping (`format.js`).
+- Tests: each endpoint (filters, pagination, tenant isolation: garage B never sees garage A), aggregates, CSV, the
+  deactivate rule (deactivated mechanic's PIN login fails), Playwright for each tab on phone and desktop.

@@ -1,19 +1,17 @@
 // The customer's page: /j/:token. No login. Live status, the quote with its photo, one-tap approval.
+// English by default with an English | हिंदी switch (C12); every string comes from src/i18n.js.
 import { useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { api } from '../data/api.js'
 import { customerFirestore } from '../data/auth.js'
 import { useLiveView } from '../data/live.js'
 import { clock, minutes, plate, rupees } from '../format.js'
+import { LANGS, t, textIn, useCustomerLang } from '../i18n.js'
 import { Check, CountUp, ErrorNote, LiveBadge, Skeleton, Spinner, useToast } from '../ui.jsx'
 import Vehicle3D from '../vehicle3d/Vehicle3D.jsx'
+import { CallButton } from './CallPanel.jsx'
 
-const STEPS = [
-  { key: 'intake', label: 'Checked in' },
-  { key: 'washing', label: 'Washing' },
-  { key: 'service', label: 'In service' },
-  { key: 'ready', label: 'Ready for pickup' },
-]
+const STEPS = ['intake', 'service', 'washing', 'ready']
 
 // The link token carries {g, j} in its signed payload; only used to know which docs to watch.
 function linkPayload(token) {
@@ -28,6 +26,8 @@ function linkPayload(token) {
 export default function Customer() {
   const { token } = useParams()
   const { g, j } = linkPayload(token)
+  const [lang, setLang] = useCustomerLang()
+  const tr = (key, vars) => t(lang, key, vars)
   const firestore = useMemo(() => (g ? customerFirestore(api, token).catch(() => null) : null), [token, g])
   const { data, error, loading, reload } = useLiveView(() => api(`/api/j/${token}`, { anonymous: true }), {
     deps: [token],
@@ -39,8 +39,9 @@ export default function Customer() {
   if (!data) {
     return (
       <main className="page page-narrow stack" style={{ paddingTop: 64 }}>
-        <h1>Link not working</h1>
-        <p className="muted">{error?.status === 403 ? 'This link has expired or is not valid. Ask the garage to send it again.' : error?.message}</p>
+        <div className="row" style={{ justifyContent: 'flex-end' }}><LangSwitch lang={lang} onChange={setLang} /></div>
+        <h1>{tr('linkBroken')}</h1>
+        <p className="muted">{error?.status === 403 ? tr('linkExpired') : lang === 'en' ? error?.message : tr('error')}</p>
       </main>
     )
   }
@@ -48,15 +49,19 @@ export default function Customer() {
   const done = data.status === 'done'
   const pending = data.quotes.filter((q) => q.status === 'pending')
   const decided = data.quotes.filter((q) => q.status !== 'pending' && q.status !== 'draft')
+  const stageTitle = done ? tr('stage.ready') : tr(`stage.${data.stage}`) || data.stage_label
 
   return (
-    <main className="page customer stack" style={{ '--gap': '16px' }}>
+    <main className="page customer stack" style={{ '--gap': '16px' }} lang={lang}>
       <header className="topbar">
         <div className="stack" style={{ '--gap': '0px' }}>
           <span className="garage-name">{data.garage}</span>
-          <span className="muted small">Job {data.job_id}</span>
+          <span className="muted small">{tr('job', { id: data.job_id })}</span>
         </div>
-        <LiveBadge label="Live" />
+        <div className="row" style={{ '--gap': '8px' }}>
+          <LangSwitch lang={lang} onChange={setLang} />
+          <LiveBadge label={tr('live')} />
+        </div>
       </header>
 
       <ErrorNote error={error} onRetry={reload} />
@@ -67,7 +72,7 @@ export default function Customer() {
           <section className={`card hero enter ${done ? 'hero-done' : ''}`}>
             <div className="row between wrap">
               <div className="stack" style={{ '--gap': '6px' }}>
-                <span className="eyebrow">Your vehicle</span>
+                <span className="eyebrow">{tr('yourVehicle')}</span>
                 <h2 style={{ fontSize: 24 }}>{data.vehicle}</h2>
               </div>
               <span className="plate mono">{plate(data.plate)}</span>
@@ -76,67 +81,84 @@ export default function Customer() {
             <div className="hero-status">
               {done ? <Check size={44} /> : <span className="status-pulse" aria-hidden="true" />}
               <div className="stack" style={{ '--gap': '2px' }}>
-                <h1 className="status-title" key={data.stage_label}>{done ? 'Ready for pickup' : data.stage_label}</h1>
-                <span className="muted small">{done ? `Final bill ${rupees(data.bill)}` : statusHint(data)}</span>
+                <h1 className="status-title" key={stageTitle}>{stageTitle}</h1>
+                <span className="muted small">{done ? tr('finalBillAmount', { amount: rupees(data.bill) }) : statusHint(data, tr)}</span>
               </div>
             </div>
           </section>
         </div>
 
         <div className="customer-side stack" style={{ '--gap': '16px' }}>
-          {pending.map((q) => <QuoteCard key={q.id} q={q} token={token} owner={data.owner} onDone={reload} />)}
+          {pending.map((q) => <QuoteCard key={q.id} q={q} token={token} owner={data.owner} onDone={reload} lang={lang} />)}
 
           <section className="card enter" style={{ '--i': 1 }}>
-            <h3 style={{ marginBottom: 12 }}>Progress</h3>
-            <Timeline data={data} />
+            <h3 style={{ marginBottom: 12 }}>{tr('progress')}</h3>
+            <Timeline data={data} tr={tr} />
           </section>
 
           {decided.map((q, i) => (
             <section key={q.id} className="card card-flat row between enter" style={{ '--i': 2 + i }}>
               <div className="stack" style={{ '--gap': '2px' }}>
-                <h3>Quote {q.id}</h3>
-                <span className="muted small">{q.lines.map((l) => l.name).join(', ')} + labour</span>
+                <h3>{tr('quote', { id: q.id })}</h3>
+                <span className="muted small">{tr('plusLabour', { parts: q.lines.map((l) => l.name).join(', ') })}</span>
               </div>
               <div className="stack" style={{ '--gap': '4px', alignItems: 'flex-end' }}>
                 <span className="num" style={{ fontWeight: 650 }}>{rupees(q.total)}</span>
-                <span className={`chip ${q.status === 'approved' ? 'chip-ok' : 'chip-bad'}`}>{q.status === 'approved' ? 'Approved' : 'Declined'}</span>
+                <span className={`chip ${q.status === 'approved' ? 'chip-ok' : 'chip-bad'}`}>{q.status === 'approved' ? (q.auto ? tr('approvedAuto') : tr('approved')) : tr('declined')}</span>
+                {q.auto && <span className="muted small">{tr('withinLimit', { amount: rupees(q.quote_limit) })}</span>}
               </div>
             </section>
           ))}
 
-          {(done || data.parts.length > 0) && <Bill data={data} done={done} />}
+          {(done || data.parts.length > 0) && <Bill data={data} done={done} tr={tr} />}
+          {data.messages?.length > 0 && <Messages messages={data.messages} lang={lang} tr={tr} />}
         </div>
       </div>
 
-      <p className="muted small" style={{ textAlign: 'center', paddingTop: 8 }}>This page updates by itself. No app needed.</p>
+      <div className="center stack" style={{ '--gap': '8px', paddingTop: 8 }}>
+        <CallButton className="btn" label={tr('callGarage')} garage={data.garage}
+          getToken={async () => (await api(`/api/j/${token}/call`, { method: 'POST', anonymous: true })).token} />
+        <p className="muted small" style={{ textAlign: 'center' }}>{tr('updatesItself')}</p>
+      </div>
     </main>
   )
 }
 
-function statusHint(data) {
-  const last = data.timeline[data.timeline.length - 1]
-  if (data.quotes.some((q) => q.status === 'pending')) return 'Waiting for your OK on extra work'
-  return last ? `Since ${clock(last.started_at)}` : ''
+// English | हिंदी, visible in the header.
+function LangSwitch({ lang, onChange }) {
+  return (
+    <div className="seg lang-switch" role="group" aria-label={t(lang, 'language')}>
+      {Object.entries(LANGS).map(([code, label]) => (
+        <button key={code} className={lang === code ? 'on' : ''} aria-pressed={lang === code} lang={code} onClick={() => onChange(code)}>{label}</button>
+      ))}
+    </div>
+  )
 }
 
-function Timeline({ data }) {
+function statusHint(data, tr) {
+  const last = data.timeline[data.timeline.length - 1]
+  if (data.quotes.some((q) => q.status === 'pending')) return tr('waitingForOk')
+  return last ? tr('since', { time: clock(last.started_at) }) : ''
+}
+
+function Timeline({ data, tr }) {
   const at = {}
-  for (const t of data.timeline) if (!at[t.name]) at[t.name] = t
+  for (const s of data.timeline) if (!at[s.name]) at[s.name] = s
   if (at.done && !at.ready) at.ready = at.done
   const stageKey = data.stage === 'done' ? 'ready' : data.stage === 'waiting_approval' ? 'service' : data.stage
-  const current = Math.max(0, STEPS.findIndex((s) => s.key === stageKey))
+  const current = Math.max(0, STEPS.indexOf(stageKey))
   const doneAll = data.status === 'done'
   return (
     <ol className="timeline" style={{ '--progress': doneAll ? 1 : current / (STEPS.length - 1) }}>
-      {STEPS.map((s, i) => {
+      {STEPS.map((key, i) => {
         const state = doneAll || i < current ? 'done' : i === current ? 'now' : 'todo'
-        const t = at[s.key]
+        const step = at[key]
         return (
-          <li key={s.key} className={`tl-step tl-${state}`}>
+          <li key={key} className={`tl-step tl-${state}`}>
             <span className="tl-dot" aria-hidden="true">{state === 'done' && <svg width="12" height="12" viewBox="0 0 12 12"><path d="M2.5 6.2 5 8.5l4.5-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>}</span>
-            <span className="grow">{s.label}</span>
+            <span className="grow">{tr(`stage.${key}`)}</span>
             <span className="muted small num">
-              {state === 'now' && !doneAll ? <span className="chip chip-accent">now</span> : t ? (t.minutes != null && s.key !== 'ready' ? minutes(t.minutes) : clock(t.started_at)) : ''}
+              {state === 'now' && !doneAll ? <span className="chip chip-accent">{tr('now')}</span> : step ? (step.minutes != null && key !== 'ready' ? minutes(step.minutes) : clock(step.started_at)) : ''}
             </span>
           </li>
         )
@@ -145,12 +167,13 @@ function Timeline({ data }) {
   )
 }
 
-function QuoteCard({ q, token, owner, onDone }) {
+function QuoteCard({ q, token, owner, onDone, lang }) {
   const toast = useToast()
+  const tr = (key, vars) => t(lang, key, vars)
   const [busy, setBusy] = useState('')
   const [result, setResult] = useState(null)
   const [confirmReject, setConfirmReject] = useState(false)
-  const [showOriginal, setShowOriginal] = useState(false)
+  const [showText, setShowText] = useState(false)
   const sending = useRef(false)
 
   // One request per decision, even on a double tap (two taps can land before React re-renders).
@@ -168,7 +191,7 @@ function QuoteCard({ q, token, owner, onDone }) {
     } catch (e) {
       sending.current = false
       if (e.status === 409) onDone() // already decided elsewhere: just show the current state, no error
-      else toast(e.message)
+      else toast(lang === 'en' ? e.message : tr('error'))
     } finally {
       setBusy('')
     }
@@ -178,25 +201,26 @@ function QuoteCard({ q, token, owner, onDone }) {
     return (
       <section className="card quote-done pop center stack" style={{ '--gap': '10px', textAlign: 'center' }}>
         {result === 'approved' ? <Check size={64} /> : <span className="decline-mark">✕</span>}
-        <h2>{result === 'approved' ? 'Approved' : 'Declined'}</h2>
-        <p className="muted">{result === 'approved' ? 'Thanks! The mechanic has been told to go ahead.' : 'No problem. Nothing extra will be done.'}</p>
+        <h2>{result === 'approved' ? tr('approved') : tr('declined')}</h2>
+        <p className="muted">{result === 'approved' ? tr('approvedThanks') : tr('declinedOk')}</p>
       </section>
     )
   }
 
+  const message = textIn(lang, q)
   return (
     <section className="card quote enter" aria-labelledby={`q-${q.id}`}>
       <div className="row between">
-        <span className="chip chip-accent"><span className="dot live-dot" />Your approval needed</span>
-        <span className="muted small">Quote {q.id}</span>
+        <span className="chip chip-accent"><span className="dot live-dot" />{tr('approvalNeeded')}</span>
+        <span className="muted small">{tr('quote', { id: q.id })}</span>
       </div>
 
-      <h2 id={`q-${q.id}`} style={{ margin: '14px 0 4px' }}>Extra work found</h2>
+      <h2 id={`q-${q.id}`} style={{ margin: '14px 0 4px' }}>{tr('extraWork')}</h2>
       {q.note && <p className="muted">{capitalise(q.note)}.</p>}
 
       {q.photo_url && (
         <figure className="quote-photo">
-          <img src={q.photo_url} alt={q.photo_caption || 'Photo from the mechanic'} />
+          <img src={q.photo_url} alt={q.photo_caption || tr('photoAlt')} />
           {q.photo_caption && <figcaption>“{q.photo_caption}”</figcaption>}
         </figure>
       )}
@@ -205,57 +229,75 @@ function QuoteCard({ q, token, owner, onDone }) {
         {q.lines.map((l) => (
           <div key={l.part_id} className="line"><dt>{l.name}{l.qty > 1 ? ` × ${l.qty}` : ''}</dt><dd className="num">{rupees(l.total)}</dd></div>
         ))}
-        <div className="line"><dt>Labour</dt><dd className="num">{rupees(q.labour)}</dd></div>
-        <div className="line line-total"><dt>Total</dt><dd className="num"><CountUp value={q.total} format={rupees} /></dd></div>
+        <div className="line"><dt>{tr('labour')}</dt><dd className="num">{rupees(q.labour)}</dd></div>
+        <div className="line line-total"><dt>{tr('total')}</dt><dd className="num"><CountUp value={q.total} format={rupees} /></dd></div>
       </dl>
 
-      {q.text && q.lang && q.lang !== 'en' && (
+      {message && (
         <div className="translated">
-          <button className="link-btn" onClick={() => setShowOriginal((v) => !v)} aria-expanded={showOriginal}>
-            {showOriginal ? 'Hide' : 'Read'} in {LANG[q.lang] || q.lang}
+          <button className="link-btn" onClick={() => setShowText((v) => !v)} aria-expanded={showText}>
+            {showText ? tr('hideMessage') : tr('readMessage')}
           </button>
-          {showOriginal && <p className="translated-text fade">{q.text}</p>}
+          {showText && <p className="translated-text fade">{message}</p>}
         </div>
       )}
 
       <div className="stack" style={{ '--gap': '8px', marginTop: 16 }}>
         <button className="btn btn-ok btn-lg btn-block" onClick={() => decide('approve')} disabled={!!busy}>
-          {busy === 'approve' ? <Spinner /> : `Approve ${rupees(q.total)}`}
+          {busy === 'approve' ? <Spinner /> : tr('approveAmount', { amount: rupees(q.total) })}
         </button>
         {confirmReject ? (
           <div className="row fade" style={{ '--gap': '8px' }}>
-            <button className="btn btn-block" onClick={() => setConfirmReject(false)} disabled={!!busy}>Keep it</button>
+            <button className="btn btn-block" onClick={() => setConfirmReject(false)} disabled={!!busy}>{tr('keepIt')}</button>
             <button className="btn btn-block" style={{ color: 'var(--bad)' }} onClick={() => decide('reject')} disabled={!!busy}>
-              {busy === 'reject' ? <Spinner /> : 'Yes, decline'}
+              {busy === 'reject' ? <Spinner /> : tr('yesDecline')}
             </button>
           </div>
         ) : (
-          <button className="btn btn-ghost btn-block" onClick={() => setConfirmReject(true)} disabled={!!busy}>Decline</button>
+          <button className="btn btn-ghost btn-block" onClick={() => setConfirmReject(true)} disabled={!!busy}>{tr('decline')}</button>
         )}
       </div>
       <p className="muted small" style={{ marginTop: 12, textAlign: 'center' }}>
-        {owner ? `${owner}, ` : ''}work above {rupees(q.quote_limit)} always waits for your OK.
+        {tr('limitNote', { owner: owner ? `${owner}, ` : '', amount: rupees(q.quote_limit) })}
       </p>
     </section>
   )
 }
 
-function Bill({ data, done }) {
+function Bill({ data, done, tr }) {
   return (
     <section className={`card enter ${done ? 'bill-final' : ''}`} style={{ '--i': 3 }}>
       <div className="row between" style={{ marginBottom: 8 }}>
-        <h3>{done ? 'Final bill' : 'Bill so far'}</h3>
+        <h3>{done ? tr('finalBill') : tr('billSoFar')}</h3>
       </div>
       <dl className="lines">
         {data.parts.map((p, i) => (
           <div key={i} className="line"><dt>{p.name}{p.qty > 1 ? ` × ${p.qty}` : ''}</dt><dd className="num">{rupees(p.total)}</dd></div>
         ))}
-        {data.labour > 0 && <div className="line"><dt>Labour</dt><dd className="num">{rupees(data.labour)}</dd></div>}
-        <div className="line line-total"><dt>Total</dt><dd className="num"><CountUp value={data.bill} format={rupees} /></dd></div>
+        {data.labour > 0 && <div className="line"><dt>{tr('labour')}</dt><dd className="num">{rupees(data.labour)}</dd></div>}
+        <div className="line line-total"><dt>{tr('total')}</dt><dd className="num"><CountUp value={data.bill} format={rupees} /></dd></div>
       </dl>
     </section>
   )
 }
+
+// What the garage sent this customer (WhatsApp), in the page's language.
+function Messages({ messages, lang, tr }) {
+  return (
+    <section className="card card-flat enter messages-card" style={{ '--i': 4 }}>
+      <h3 style={{ marginBottom: 10 }}>{tr('messages')}</h3>
+      <ol className="cust-messages">
+        {[...messages].reverse().map((m, i) => (
+          <li key={`${m.at}-${i}`}>
+            <div className="row between small muted"><span>{STRINGS_KIND.includes(m.kind) ? tr(`kind.${m.kind}`) : tr('kind.other')}</span><span className="num">{clock(m.at)}</span></div>
+            <p className="msg-text">{textIn(lang, m).replace(/\s*https?:\/\/\S+/g, '')}</p>
+          </li>
+        ))}
+      </ol>
+    </section>
+  )
+}
+const STRINGS_KIND = ['status_link', 'quote', 'final_bill']
 
 function CustomerSkeleton() {
   return (
@@ -265,8 +307,6 @@ function CustomerSkeleton() {
     </main>
   )
 }
-
-const LANG = { mr: 'Marathi', hi: 'Hindi', gu: 'Gujarati', kn: 'Kannada', ta: 'Tamil', te: 'Telugu', bn: 'Bengali', ml: 'Malayalam', pa: 'Punjabi' }
 
 function capitalise(s) {
   return s ? s[0].toUpperCase() + s.slice(1) : s

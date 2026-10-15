@@ -86,9 +86,13 @@ test('a late tap in a stale tab shows the decision that stands, without an error
   Object.assign(backend.state.view.quotes[0], { status: 'approved' })
   await b.getByRole('button', { name: 'Decline' }).click()
   await b.getByRole('button', { name: 'Yes, decline' }).click()
-  await expect(b.getByRole('heading', { name: 'Approved' })).toBeVisible()
+  // The brief "Approved" confirmation (1.6 s) is checked in the approve test; under full-suite load (software
+  // WebGL on every page) it can come and go between checks, so here only the outcome is checked.
   await expect(b.locator('.chip-ok', { hasText: 'Approved' })).toBeVisible()
+  await expect(b.locator('.chip-bad')).toHaveCount(0)
+  await expect(b.locator('.quote')).toHaveCount(0)
   await expect(b.locator('.toast')).toHaveCount(0)
+  expect(backend.state.posts).toBe(1)
 })
 
 test('if the server still says pending, the buttons come back instead of a stuck "Approved"', async ({ context }) => {

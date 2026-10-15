@@ -37,8 +37,30 @@ export default function JobViewer({ job, quote, onClose }) {
           <div><span className="muted small">In this stage</span><strong>{since == null ? '—' : minutes(since)}</strong></div>
           <div><span className="muted small">{job.status === 'done' ? 'Final bill' : 'Bill so far'}</span><strong>{rupees(view.bill || 0)}</strong></div>
         </div>
+        {view.money && <Money m={view.money} done={job.status === 'done'} />}
         {job.complaint && <p className="muted small">Complaint: {job.complaint}</p>}
       </div>
     </dialog>
+  )
+}
+
+// parts + consumables + labour = bill, and what the parts and consumables cost the garage (C13).
+export function Money({ m, done }) {
+  return (
+    <div className="money" aria-label="Bill and margin">
+      <div className="money-sum">
+        <span><span className="muted small">Parts</span><strong className="num">{rupees(m.parts)}</strong></span>
+        <span className="money-op" aria-hidden="true">+</span>
+        <span><span className="muted small">Consumables</span><strong className="num">{rupees(m.consumables)}</strong></span>
+        <span className="money-op" aria-hidden="true">+</span>
+        <span><span className="muted small">Labour</span><strong className="num">{rupees(m.labour)}</strong></span>
+        <span className="money-op" aria-hidden="true">=</span>
+        <span><span className="muted small">{done ? 'Bill' : 'Bill so far'}</span><strong className="num">{rupees(m.bill)}</strong></span>
+      </div>
+      <div className="row between wrap small">
+        <span className="muted">Cost of parts used <strong className="num" style={{ color: 'var(--text)' }}>{rupees(m.cost)}</strong></span>
+        <span className={`chip ${m.margin >= 0 ? 'chip-ok' : 'chip-bad'}`}>Margin {rupees(m.margin)}</span>
+      </div>
+    </div>
   )
 }

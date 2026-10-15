@@ -8,17 +8,20 @@ Errors come back as {"error": ...} so the agent can say what went wrong.
 
 import uuid
 
-from app.services import core, inventory, jobs, manuals, owner, photos, quotes
+from app import gemini
+from app.services import core, inventory, jobs, manuals, owner, photos, quotes, settings
 
 CURRENT_JOB = "current_job"
 
 
 def _who(tool_context, role: str = "mechanic") -> tuple[dict, str]:
     """The caller from session state. Mechanic tools refuse an owner session and owner tools a mechanic one,
-    on top of each agent only having its own tools. role="any": read-only tools both may use."""
+    on top of each agent only having its own tools. role="any": read-only tools both may use. A front-desk caller
+    (C15) is neither, so no staff tool ever runs for a phone caller."""
     s = tool_context.state
     who = core.actor(s["garage_id"], s["uid"], s.get("role", "mechanic"), s.get("name", ""))
-    if role != "any" and (role == "owner") != (who["role"] == "owner"):
+    allowed = ("owner", "mechanic") if role == "any" else (role,)
+    if who["role"] not in allowed:
         raise core.Forbidden(f"this is a {role} tool")
     return who, s["garage_id"]
 
@@ -46,7 +49,8 @@ def _safe(fn):
         return {"error": str(e)}
 
 
-def create_job(plate: str, vehicle: str, owner_name: str, owner_phone: str, complaint: str, tool_context) -> dict:
+def create_job(plate: str, vehicle: str, owner_name: str, owner_phone: str, complaint: str, tool_context,
+               customer_language: str = "") -> dict:
     """Open a new job card when a vehicle comes in.
 
     Args:
@@ -55,10 +59,14 @@ def create_job(plate: str, vehicle: str, owner_name: str, owner_phone: str, comp
         owner_name: customer's name.
         owner_phone: customer's phone number, or "" if not given.
         complaint: what the customer wants done, e.g. "clutch slipping, general service".
+        customer_language: only if the mechanic says which language the customer wants messages in, as a code
+            (en, hi, mr, ...); "" keeps a returning customer's language, new customers get English.
     """
     def call():
         who, g = _who(tool_context)
-        out = jobs.create_job(who, g, _request_id(tool_context), plate, vehicle, owner_name, owner_phone, complaint)
+        lang = customer_language.strip().lower()
+        out = jobs.create_job(who, g, _request_id(tool_context), plate, vehicle, owner_name, owner_phone, complaint,
+                              lang if lang in gemini.LANGUAGES else "")
         tool_context.state[CURRENT_JOB] = out["job_id"]
         return out
 
@@ -80,7 +88,8 @@ def get_vehicle_history(plate: str, tool_context) -> dict:
 
 
 def update_stage(stage: str, job: str, tool_context) -> dict:
-    """Move a job to a new stage. Stages: washing, service, waiting_approval, ready.
+    """Move a job to a new stage. Stages in garage order: service, waiting_approval, washing (after the repair),
+    ready. Use close_job for done.
 
     Args:
         stage: the new stage name.
@@ -108,7 +117,8 @@ def check_stock(part: str, vehicle: str, tool_context) -> dict:
 
 
 def log_part_used(part: str, qty: int, job: str, tool_context) -> dict:
-    """Record parts fitted on a job. Takes them out of stock and adds them to the bill.
+    """Record parts fitted on a job. Takes them and their usual fittings (gaskets, bolts, oil...) out of stock and
+    adds them to the bill. Read back only "say" (the main part, plus "and the usual fittings"); never list bolts.
 
     Args:
         part: part name as spoken or a part_id from check_stock.
@@ -160,6 +170,41 @@ def lookup_manual(question: str, vehicle: str, tool_context) -> dict:
                                    for h in out["sources"]]}
 
     return _safe(call)
+
+
+async def web_search_fixes(question: str, vehicle: str, confirmed: bool, tool_context) -> dict:
+    """Search the web for common causes and known fixes of a problem, ONLY after lookup_manual found nothing and
+    the mechanic said yes to "Shall I search online?". Returns 2-3 points with the source sites. They are from
+    the web, not the manual, and never a diagnosis.
+
+    Args:
+        question: the problem as the mechanic described it, e.g. "hard to start in the morning".
+        vehicle: model, e.g. "Splendor Plus"; "" for the vehicle of the job being discussed.
+        confirmed: true only when the mechanic just agreed to an online search.
+    """
+    import asyncio
+
+    from app.services import websearch
+
+    if confirmed is not True:
+        return {"error": 'not searched: ask the mechanic "Shall I search online for known causes and fixes?" first'}
+    try:
+        who, g = _who(tool_context)
+        model = vehicle.strip()
+        if not model:
+            current = tool_context.state.get(CURRENT_JOB)
+            if not current:
+                raise core.Invalid("which vehicle? say the model")
+            model = (await asyncio.to_thread(jobs.get_job, who, g, current))["vehicle"]
+        found = await websearch.search(question, model)
+        return await asyncio.to_thread(websearch.record, who, g, _request_id(tool_context), question, model, found)
+    except (core.Invalid, core.NotFound, core.Forbidden) as e:
+        return {"error": str(e)}
+    except Exception:  # the search service failing must not end the voice session
+        import logging
+
+        logging.getLogger(__name__).exception("web search failed")
+        return {"error": "the web search didn't work just now"}
 
 
 # ---------------------------------------------------------------- Quote agent tools
@@ -214,8 +259,9 @@ def send_status_link(job: str, tool_context) -> dict:
 
 
 def send_quote(quote_id: str, tool_context) -> dict:
-    """Send a drafted quote to the customer in their language. Above the garage's quote limit it waits
-    for their Approve/Reject (status "pending"); otherwise it is approved straight away.
+    """Send a drafted quote to the customer in their language. Above the garage's auto-approve limit it waits
+    for their Approve/Reject (status "pending"); otherwise it is approved straight away (auto=true, and "say"
+    holds the line for the mechanic, e.g. "Approved automatically: within the ₹500 limit").
 
     Args:
         quote_id: e.g. "Q-77", from draft_quote.
@@ -288,7 +334,7 @@ def list_open_jobs(stage: str, mechanic: str, tool_context) -> dict:
     """Jobs on the floor now, optionally only one stage or one mechanic.
 
     Args:
-        stage: intake, washing, service, waiting_approval or ready; "" for all.
+        stage: intake, service, waiting_approval, washing or ready; "" for all.
         mechanic: mechanic's name; "" for all.
     """
     def call():
@@ -304,8 +350,9 @@ def list_open_jobs(stage: str, mechanic: str, tool_context) -> dict:
 
 
 def job_details(job: str, tool_context) -> dict:
-    """One job: vehicle, customer, mechanic, stage, minutes spent in each stage and in total, parts, bill.
-    Finds closed jobs by number; open jobs also by plate.
+    """One job: vehicle, customer, mechanic, stage, minutes spent in each stage and in total, parts, bill, and
+    money: the bill split (parts + consumables + labour), what the parts and consumables cost the garage, and the
+    margin. Use it for "what did J-1042 cost us?". Finds closed jobs by number; open jobs also by plate.
 
     Args:
         job: job number (e.g. "J-1042" or "1042") or number plate.
@@ -316,7 +363,10 @@ def job_details(job: str, tool_context) -> dict:
         minutes = j.get("stage_minutes", {})
         return _job_line(j) | {"complaint": j.get("complaint"), "minutes_per_stage": minutes,
                                "total_minutes": sum(minutes.values()),
-                               "parts": [{"name": p["name"], "qty": p["qty"], "total": p["total"]} for p in j.get("parts", [])]}
+                               "parts": [{"name": p["name"], "qty": p["qty"], "total": p["total"]} for p in j.get("parts", [])],
+                               "garage_consumables": [{"name": c["name"], "qty": c["qty"], "cost": c["cost"]}
+                                                      for c in j.get("consumables", [])],
+                               "money": jobs.money(j)}
 
     return _safe(call)
 
@@ -359,6 +409,73 @@ def recent_activity(limit: int, tool_context) -> dict:
     return _safe(call)
 
 
+def garage_settings(tool_context) -> dict:
+    """The garage's settings: auto-approve limit in rupees (quotes up to it are approved without asking the
+    customer; 0 = always ask), garage name and city, default customer language, supplier, reorder quantity and
+    low-stock level. Read-only: settings are changed in the app's Settings tab."""
+    def call():
+        who, g = _who(tool_context, "owner")
+        out = settings.get_settings(who, g)
+        out.pop("languages", None)
+        return out | {"auto_approve_limit": out["quote_limit"]}
+
+    return _safe(call)
+
+
+def mechanic_jobs(mechanic: str, period: str, tool_context) -> dict:
+    """How many jobs a mechanic (or every mechanic) finished in a period, their open jobs now, average time per job,
+    revenue on their jobs and parts logged. "How many jobs did Raju finish this week?"
+
+    Args:
+        mechanic: the mechanic's name, or "" for everyone.
+        period: "today", "week" (Monday to today) or "month" (1st to today).
+    """
+    from app.services import reports
+
+    def call():
+        who, g = _who(tool_context, "owner")
+        out = reports.staff(who, g, period.strip().lower() or "week")
+        rows = [m for m in out["mechanics"] if not mechanic.strip() or m["name"].lower() == mechanic.strip().lower()]
+        if mechanic.strip() and not rows:
+            raise core.NotFound(f"no mechanic called {mechanic}")
+        return {"period": out["period"], "from": out["from"], "to": out["to"],
+                "mechanics": [{k: m[k] for k in ("name", "finished", "open_now", "average_minutes", "revenue",
+                                                 "parts_logged", "active")} for m in rows]}
+
+    return _safe(call)
+
+
+def revenue_for(period: str, tool_context) -> dict:
+    """Money from jobs closed in a period: revenue, number of jobs, average bill, cost of parts used and margin.
+    "How much did we make this month?"
+
+    Args:
+        period: "today", "week" (Monday to today) or "month" (1st to today).
+    """
+    from app.services import reports
+
+    def call():
+        who, g = _who(tool_context, "owner")
+        return reports.revenue(who, g, period.strip().lower() or "today")
+
+    return _safe(call)
+
+
+def vehicle_last_visit(plate: str, tool_context) -> dict:
+    """When a vehicle last came in, what was done and the bill. "When did MH12AB1234 last come in?"
+
+    Args:
+        plate: number plate, e.g. "MH12 AB 1234".
+    """
+    from app.services import reports
+
+    def call():
+        who, g = _who(tool_context, "owner")
+        return reports.last_visit(who, g, plate)
+
+    return _safe(call)
+
+
 def answer_reorder(part_id: str, answer: str, tool_context) -> dict:
     """The owner answers an open reorder question. Only when the owner clearly said yes or later.
 
@@ -378,7 +495,140 @@ def answer_reorder(part_id: str, answer: str, tool_context) -> dict:
 
 
 OWNER_TOOLS = [today_summary, list_open_jobs, job_details, pending_approvals, low_stock, recent_activity,
-               answer_reorder, lookup_manual]
+               garage_settings, mechanic_jobs, revenue_for, vehicle_last_visit, answer_reorder, lookup_manual]
 
 
-FAST_TOOLS = [create_job, get_vehicle_history, update_stage, check_stock, log_part_used, close_job, lookup_manual]
+FAST_TOOLS = [create_job, get_vehicle_history, update_stage, check_stock, log_part_used, close_job, lookup_manual,
+              web_search_fixes]
+
+
+# ---------------------------------------------------------------- Front desk tools (C15: a customer calls the garage)
+
+
+def _caller(tool_context) -> tuple[dict, str]:
+    """The caller from session state (set by the gateway from the signed call token, never from the model)."""
+    from app.services import frontdesk
+
+    s = tool_context.state
+    if s.get("role") != "caller":
+        raise core.Forbidden("this is a front desk tool")
+    return (frontdesk.caller(s["garage_id"], s.get("phone", ""), bool(s.get("verified")), s.get("call_id", ""),
+                             s.get("call_job", "")), s["garage_id"])
+
+
+def my_vehicle_status(plate: str, tool_context) -> dict:
+    """The caller's own vehicle status: stage, whether a quote waits for their OK, bill so far. Only for a caller
+    whose number is verified; otherwise it says it can't share details and offers to send the link instead.
+
+    Args:
+        plate: number plate if the caller has more than one vehicle in, else "".
+    """
+    from app.services import frontdesk
+
+    def call():
+        who, g = _caller(tool_context)
+        return frontdesk.vehicle_status(who, g, _request_id(tool_context), plate)
+
+    return _safe(call)
+
+
+def send_status_link_again(plate: str, tool_context) -> dict:
+    """Send the vehicle's live status link again, by WhatsApp, to the customer's number on file (not to the caller).
+
+    Args:
+        plate: the vehicle's number plate; "" if the caller is verified and has one vehicle in.
+    """
+    from app.services import frontdesk
+
+    def call():
+        who, g = _caller(tool_context)
+        return frontdesk.send_status_link(who, g, _request_id(tool_context), plate)
+
+    return _safe(call)
+
+
+def send_quote_again(plate: str, tool_context) -> dict:
+    """Send the quote that is waiting for the customer's OK again, to the customer's number on file.
+
+    Args:
+        plate: the vehicle's number plate; "" if the caller is verified and has one vehicle in.
+    """
+    from app.services import frontdesk
+
+    def call():
+        who, g = _caller(tool_context)
+        return frontdesk.send_quote_again(who, g, _request_id(tool_context), plate)
+
+    return _safe(call)
+
+
+def request_estimate(work_wanted: str, vehicle: str, name: str, tool_context) -> dict:
+    """A caller asks what a job would cost. Drafts an estimate from stock prices and sends it to the OWNER to
+    confirm; the caller gets it on WhatsApp once the owner confirms. Never tell the caller a price yourself.
+
+    Args:
+        work_wanted: what they want done, e.g. "clutch plate change".
+        vehicle: their vehicle model, e.g. "Splendor Plus".
+        name: the caller's name if they gave it, else "".
+    """
+    from app.services import frontdesk
+
+    def call():
+        who, g = _caller(tool_context)
+        return frontdesk.request_estimate(who, g, _request_id(tool_context), work_wanted, vehicle, name)
+
+    return _safe(call)
+
+
+def book_dropoff(name: str, vehicle: str, when: str, note: str, tool_context) -> dict:
+    """Book a time for the caller to drop off their vehicle.
+
+    Args:
+        name: the caller's name.
+        vehicle: model and, if given, number plate.
+        when: day and time as the caller said it, e.g. "tomorrow 10 am".
+        note: what they want done, or "".
+    """
+    from app.services import frontdesk
+
+    def call():
+        who, g = _caller(tool_context)
+        return frontdesk.book_dropoff(who, g, _request_id(tool_context), name, vehicle, when, note)
+
+    return _safe(call)
+
+
+def request_callback(name: str, reason: str, tool_context) -> dict:
+    """When you can't help: ask the owner to call the caller back. There is no live transfer.
+
+    Args:
+        name: the caller's name, or "".
+        reason: what it's about, in a few words, e.g. "the bill for the Splendor".
+    """
+    from app.services import frontdesk
+
+    def call():
+        who, g = _caller(tool_context)
+        return frontdesk.request_callback(who, g, _request_id(tool_context), name, reason)
+
+    return _safe(call)
+
+
+def service_wait_time(work_wanted: str, tool_context) -> dict:
+    """"How long if I bring my bike now?", "how soon can you service it?". A rough range from how busy the garage is
+    right now (vehicles ahead, mechanics working, how long jobs usually take). Shares only counts, never anyone's job.
+
+    Args:
+        work_wanted: what they want done, e.g. "general service", or "" if they didn't say.
+    """
+    from app.services import frontdesk
+
+    def call():
+        who, g = _caller(tool_context)
+        return frontdesk.wait_time(who, g, _request_id(tool_context), work_wanted)
+
+    return _safe(call)
+
+
+FRONT_DESK_TOOLS = [my_vehicle_status, service_wait_time, send_status_link_again, send_quote_again, request_estimate,
+                    book_dropoff, request_callback]

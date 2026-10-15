@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BAYS, layout, stationFor } from './layout.js'
+import { BAY_X, BAYS, layout, stationFor, STATIONS, WASH_X } from './layout.js'
 
 const job = (id, stage, extra = {}) => ({ id, stage, status: 'open', vehicle: 'Splendor Plus', plate: 'MH12AB1234',
   owner: 'Ramesh', mechanic_name: 'Raju', stage_started_at: `2026-10-13T0${id.slice(-1)}:00:00Z`, ...extra })
@@ -53,5 +53,20 @@ describe('layout: mechanics follow their latest job', () => {
   it('moves the mechanic to the job that changed stage most recently, wherever it is', () => {
     const plan = layout({ jobs: [job('J-1', 'service'), job('J-2', 'washing')], pending_approvals: [] })
     expect(plan.mechanics).toEqual([expect.objectContaining({ name: 'Raju', jobId: 'J-2' })])
+  })
+})
+
+describe('floor order (C10: washing comes last, just before delivery)', () => {
+  it('runs front door → service bays → wash bay → delivery from left to right', () => {
+    expect(STATIONS.map((s) => s.key)).toEqual(['door', 'service', 'wash', 'delivery'])
+    for (let i = 1; i < STATIONS.length; i++) expect(STATIONS[i].x0).toBeGreaterThan(STATIONS[i - 1].x1)
+    const wash = STATIONS.find((s) => s.key === 'wash')
+    const service = STATIONS.find((s) => s.key === 'service')
+    expect(WASH_X).toBeGreaterThan(wash.x0)
+    expect(WASH_X).toBeLessThan(wash.x1)
+    for (let i = 0; i < BAYS; i++) expect(BAY_X(i)).toBeGreaterThan(service.x0) && expect(BAY_X(i)).toBeLessThan(service.x1)
+    const plan = layout({ jobs: [job('J-1', 'intake'), job('J-2', 'service'), job('J-3', 'washing'), job('J-4', 'ready')], pending_approvals: [] })
+    const x = ['J-1', 'J-2', 'J-3', 'J-4'].map((id) => plan.vehicles.find((v) => v.id === id).x)
+    expect(x).toEqual([...x].sort((a, b) => a - b))
   })
 })

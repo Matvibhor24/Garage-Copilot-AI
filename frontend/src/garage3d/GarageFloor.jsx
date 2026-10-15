@@ -1,5 +1,5 @@
-// Owner > Floor: the whole garage in 3D, live. Every open job is a vehicle at its station (front door, wash bay,
-// a service lift, delivery); mechanics stand by the vehicle they're working on; a vehicle waiting for the
+// Owner > Floor: the whole garage in 3D, live. Every open job is a vehicle at its station (front door, a service
+// lift, the wash bay, delivery); mechanics stand by the vehicle they're working on; a vehicle waiting for the
 // customer's OK pulses on its lift. Click a vehicle to inspect the job; "Open in 3D" shows the part being worked on.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { minutes, plate, rupees } from '../format.js'
@@ -94,8 +94,8 @@ export default function GarageFloor({ dash }) {
     ...dash.messages.slice(0, 4).map((m) => ({ key: m.id || m.at, tag: 'INFO', tone: 'info', title: m.text, at: m.at })),
   ]
   const flow = [
-    ['At door', plan.counts.door], ['Washing', plan.counts.wash], ['In bays', plan.counts.service],
-    ['Need OK', plan.counts.waiting], ['Ready', plan.counts.delivery], ['Delivered', plan.counts.delivered],
+    ['At door', plan.counts.door], ['In bays', plan.counts.service], ['Need OK', plan.counts.waiting],
+    ['Washing', plan.counts.wash], ['Ready', plan.counts.delivery], ['Delivered', plan.counts.delivered],
   ]
 
   return (

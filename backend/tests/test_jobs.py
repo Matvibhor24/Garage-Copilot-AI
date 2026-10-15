@@ -58,3 +58,18 @@ def test_other_garage_cannot_read_job(garage):
 def test_vehicle_history_first_visit(garage):
     out = jobs.vehicle_history(mechanic(), G, "h1", "MH12 AB 1234")
     assert out == {"plate": "MH12AB1234", "visits": [], "summary": "First visit to this garage."}
+
+
+def test_washing_comes_last_before_delivery():
+    """C10: real garages wash after the repair."""
+    assert jobs.STAGES == ["intake", "service", "waiting_approval", "washing", "ready", "done"]
+    assert list(jobs.STAGE_LABELS) == jobs.STAGES
+
+
+def test_dashboard_lists_stages_in_garage_order(fake_db):
+    from app import seed
+    from app.services import owner as owner_service
+    from tests.helpers import owner
+
+    seed.seed(fake_db)
+    assert list(owner_service.dashboard(owner(), G)["jobs_by_stage"]) == ["intake", "service", "waiting_approval", "washing", "ready"]

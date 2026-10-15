@@ -2,16 +2,18 @@
 // cheap to test. Units are metres on the floor: x runs left (front door) to right (delivery), z towards the viewer.
 import { vehicleKind } from '../vehicle3d/focus.js'
 
-// The floor plan, in the order a vehicle moves through the garage.
+// The floor plan, in the order a vehicle moves through the garage: front door, service bays, then the wash bay just
+// before delivery (garages wash after the repair, C10).
 export const STATIONS = [
   { key: 'door', label: 'Front door', hint: 'Waiting to start', x0: -13, x1: -8.6 },
-  { key: 'wash', label: 'Wash bay', hint: 'Foam and rinse', x0: -8.2, x1: -3.6 },
-  { key: 'service', label: 'Service bays', hint: 'On the lifts', x0: -3.2, x1: 7.8 },
+  { key: 'service', label: 'Service bays', hint: 'On the lifts', x0: -8.2, x1: 2.8 },
+  { key: 'wash', label: 'Wash bay', hint: 'Foam and rinse', x0: 3.2, x1: 7.8 },
   { key: 'delivery', label: 'Delivery', hint: 'Ready for pickup', x0: 8.2, x1: 13 },
 ]
 export const FLOOR = { x0: -13, x1: 13, z0: -5.2, z1: 4.6 }
 export const BAYS = 3
-const BAY_X = (i) => -1.35 + i * 3.4 // centre of service bay i
+export const BAY_X = (i) => -6.35 + i * 3.4 // centre of service bay i
+export const WASH_X = 5.5 // the wash arch, between the service bays and delivery
 const ROW_Z = [-3, -1, 1, 3] // parking rows at the door and delivery (vehicles side by side)
 
 // Job stage -> station. A pending quote keeps the vehicle on its lift, flagged.
@@ -49,11 +51,11 @@ export function layout(dash) {
   })
 
   parkRow(groups.door, 'door', -10.6)
-  groups.wash.forEach((j, i) => place(j, 'wash', i, -5.9, ROW_Z[[1, 2, 0, 3][i % 4]]))
+  groups.wash.forEach((j, i) => place(j, 'wash', i, WASH_X, ROW_Z[[1, 2, 0, 3][i % 4]]))
   const onLifts = groups.service.slice(0, BAYS)
   const waitingForLift = groups.service.slice(BAYS)
   onLifts.forEach((j, i) => place(j, 'service', i, BAY_X(i), -1.2))
-  waitingForLift.forEach((j, i) => place(j, 'service', BAYS + i, -1.35 + i * 2.6, 3.4)) // parked in front of the lifts
+  waitingForLift.forEach((j, i) => place(j, 'service', BAYS + i, BAY_X(0) + i * 2.6, 3.4)) // parked in front of the lifts
   parkRow(groups.delivery, 'delivery', 10.6)
 
   // A mechanic stands by the vehicle they touched most recently (wash bay or lift)

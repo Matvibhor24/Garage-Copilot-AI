@@ -15,7 +15,7 @@ Oct 1, 2026 · @Gaurav
 One bike, one mechanic, hands never touch the phone:
 
 1. **Intake:** "New bike, Splendor Plus, MH12 AB 1234, owner Ramesh, 98xxxxxx, complaint: clutch slipping, general service." A job card is created and Ramesh gets a WhatsApp-style link to a live status page.
-2. **Status updates:** "Moving it to washing" / "Started service." The page timeline updates and time per stage is logged.
+2. **Status updates:** "Started service." (and, after the repair, "Moving it to washing") The page timeline updates and time per stage is logged.
 3. **Stock check:** "Do we have a clutch plate set for Splendor? Price?" Agent: "Two in stock, ₹650, labour ₹300."
 4. **Approval:** the job is over the pre-approved budget, so the agent sends Ramesh an itemised quote. He taps Approve; the mechanic hears "Ramesh approved, go ahead."
 5. **Auto-logging:** "Used one clutch plate set." Stock decrements; the job bill updates.

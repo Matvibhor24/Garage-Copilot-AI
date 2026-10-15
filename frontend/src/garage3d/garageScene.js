@@ -6,7 +6,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import { buildVehicle, paintFor } from '../vehicle3d/models.js'
-import { BAYS, FLOOR, STATIONS } from './layout.js'
+import { BAY_X, BAYS, FLOOR, STATIONS, WASH_X } from './layout.js'
 
 const ACCENT = 0xff5b1f
 const INK = '#1b1b1d'
@@ -124,20 +124,20 @@ function buildGarage() {
     g.add(name, hint)
   }
 
-  // Wash bay: an arch with spray bars and a drain grate
-  const wx = -5.9
+  // Wash bay (just before delivery): an arch with spray bars and a drain grate
+  const wx = WASH_X
   for (const z of [-4.2, 4.0]) g.add(rod(new THREE.Vector3(wx, 0, z), new THREE.Vector3(wx, 2.3, z), 0.07, mat.steel))
   g.add(rod(new THREE.Vector3(wx, 2.3, -4.2), new THREE.Vector3(wx, 2.3, 4.0), 0.07, mat.steel))
   for (const z of [-3, -1, 1, 3]) g.add(box(0.5, 0.08, 0.5, mat.steel, wx, 2.22, z))
   g.add(box(3.6, 0.01, 0.3, mat.lift, wx, 0.006, 0, 0.004))
   // Hose reel on the back wall
   const reel = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.07, 10, 28), new THREE.MeshStandardMaterial({ color: 0x2a7de1, roughness: 0.5 }))
-  reel.position.set(-7.4, 1.3, FLOOR.z0 + 0.1)
+  reel.position.set(WASH_X - 1.5, 1.3, FLOOR.z0 + 0.1)
   g.add(reel)
 
   // Service bays: numbered lifts, a tool cart each, a tyre stack and parts shelves on the back wall
   for (let i = 0; i < BAYS; i++) {
-    const x = -1.35 + i * 3.4
+    const x = BAY_X(i)
     rect(g, x - 1.5, FLOOR.z0 + 0.7, x + 1.5, 2.2, 0xd0ccc3, 0.04)
     const num = floorText(`BAY ${i + 1}`, { size: 0.34, width: 1.6, color: MUTED, font: 'JetBrains Mono, ui-monospace, monospace' })
     num.position.set(x - 0.75, 0.007, 1.85)
@@ -159,7 +159,7 @@ function buildGarage() {
   for (let t = 0; t < 4; t++) {
     const tyre = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.1, 10, 24), mat.rubber)
     tyre.rotation.x = Math.PI / 2
-    tyre.position.set(7.1, 0.1 + t * 0.2, -4.4)
+    tyre.position.set(BAY_X(BAYS - 1) + 1.65, 0.1 + t * 0.2, -4.4)
     g.add(tyre)
   }
   const shelves = new THREE.Group()
@@ -168,7 +168,7 @@ function buildGarage() {
     for (let b = 0; b < 5; b++) shelves.add(box(0.42, 0.3, 0.36, mat.box, -1.35 + b * 0.68, 0.63 + level * 0.65, 0, 0.02))
   }
   for (const x of [-1.68, 1.68]) shelves.add(box(0.05, 1.9, 0.5, mat.shelf, x, 0.95, 0))
-  shelves.position.set(2.05, 0, FLOOR.z0 + 0.35)
+  shelves.position.set(BAY_X(1), 0, FLOOR.z0 + 0.35)
   g.add(shelves)
 
   // Delivery: a pickup line
@@ -439,7 +439,7 @@ export function createGarage(canvas, { onSelect, onFrame, reducedMotion = false 
       const pos = water.geometry.attributes.position.array
       for (let i = 0; i < drops; i++) {
         if (pos[i * 3 + 1] <= 0.05) {
-          pos[i * 3] = -5.9 + rand(-0.9, 0.9)
+          pos[i * 3] = WASH_X + rand(-0.9, 0.9)
           pos[i * 3 + 1] = rand(1.6, 2.2)
           pos[i * 3 + 2] = washZ[i % washZ.length] + rand(-0.5, 0.5)
           dropVel[i] = rand(2.5, 4)

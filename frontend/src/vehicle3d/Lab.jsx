@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import Vehicle3D from './Vehicle3D.jsx'
 import { ZONE_LABELS } from './focus.js'
 
-const STAGES = ['intake', 'washing', 'service', 'waiting_approval', 'done']
+const STAGES = ['intake', 'service', 'waiting_approval', 'washing', 'done']
 
 export default function Lab() {
   const q = new URLSearchParams(window.location.search)

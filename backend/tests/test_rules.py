@@ -48,6 +48,7 @@ def data():
         "garages/g1/inventory/p1": {"name": "Clutch plate set"},
         "garages/g1/mechanics/m-raju": {"pin_hash": "x"},
         "garages/g1/audit_log/a1": {"action": "create_job"},
+        "garages/g1/calls/C-1": {"phone": "9800000101"},
         "garages/g1/requests/r1": {"status": "done"},
         "garages/g2/jobs/J-9": {"plate": "MH15XX9999"},
         "phone_index/+919800000001": {"garage_id": "g1"},
@@ -80,6 +81,7 @@ def test_owner_only_and_backend_only():
     assert can_read("garages/g1/audit_log/a1", OWNER)
     assert not can_read("garages/g1/audit_log/a1", MECH)
     assert not can_read("garages/g1/mechanics/m-raju", MECH)
+    assert can_read("garages/g1/calls/C-1", OWNER) and not can_read("garages/g1/calls/C-1", MECH)  # C15
     assert not can_read("garages/g1/requests/r1", OWNER)
     assert not can_read("phone_index/+919800000001", OWNER)
 

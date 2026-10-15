@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app import config, gateway, routes_auth, routes_customer, routes_owner, routes_photos, routes_tasks
+from app import config, gateway, routes_auth, routes_call, routes_customer, routes_owner, routes_photos, routes_tasks
 from app.services import core
 
 app = FastAPI(title="GarageCopilot")
@@ -16,6 +16,7 @@ app.include_router(routes_auth.router)
 app.include_router(gateway.router)
 app.include_router(routes_photos.router)
 app.include_router(routes_tasks.router)
+app.include_router(routes_call.router)
 
 
 @app.exception_handler(core.Forbidden)

@@ -9,6 +9,9 @@ import { Brand, CountUp, ErrorNote, LiveBadge, Skeleton, Spinner, useToast } fro
 import JobViewer from '../vehicle3d/JobViewer.jsx'
 import GarageFloor from '../garage3d/GarageFloor.jsx'
 import OwnerVoice from './OwnerVoice.jsx'
+import OwnerSettings from './OwnerSettings.jsx'
+import OwnerCalls from './OwnerCalls.jsx'
+import { Customers, Jobs, Staff, Vehicles } from './OwnerRecords.jsx'
 
 export default function Owner() {
   const [me, setMe] = useState(() => (session()?.role === 'owner' ? session() : null))
@@ -101,7 +104,12 @@ function OwnerApp({ me, onSignOut }) {
         <nav className="tabs" aria-label="Owner sections">
           <NavLink end to="/owner" className="tab" viewTransition>Today</NavLink>
           <NavLink to="/owner/floor" className="tab" viewTransition>Floor</NavLink>
+          <NavLink to="/owner/jobs" className="tab" viewTransition>Jobs</NavLink>
+          <NavLink to="/owner/customers" className="tab" viewTransition>Customers</NavLink>
+          <NavLink to="/owner/vehicles" className="tab" viewTransition>Vehicles</NavLink>
+          <NavLink to="/owner/staff" className="tab" viewTransition>Staff</NavLink>
           <NavLink to="/owner/stock" className="tab" viewTransition>Stock</NavLink>
+          <NavLink to="/owner/settings" className="tab" viewTransition>Settings</NavLink>
         </nav>
       </div>
 
@@ -109,7 +117,12 @@ function OwnerApp({ me, onSignOut }) {
       <Routes>
         <Route index element={<Today dash={dash} g={g} />} />
         <Route path="floor" element={dash.data ? <GarageFloor dash={dash.data} /> : <DashSkeleton />} />
+        <Route path="jobs" element={<Jobs />} />
+        <Route path="customers" element={<Customers />} />
+        <Route path="vehicles" element={<Vehicles />} />
+        <Route path="staff" element={<Staff />} />
         <Route path="stock" element={<Stock g={g} />} />
+        <Route path="settings" element={<OwnerSettings onSaved={dash.reload} />} />
       </Routes>
       <OwnerVoice />
     </main>
@@ -137,13 +150,14 @@ function Today({ dash, g }) {
         <Tile i={2} label="Low stock" value={d.low_stock.length} tone={d.low_stock.length ? 'bad' : ''}
           sub={d.low_stock[0] ? `${d.low_stock[0].name}: ${d.low_stock[0].qty} left` : 'Stock looks fine'} />
         <Tile i={3} label="Revenue today" value={d.revenue_today} format={rupees} tone="ok"
-          sub={`${Object.keys(d.minutes_per_job).length} jobs closed`} />
+          sub={`${Object.keys(d.minutes_per_job).length} jobs closed${d.margin_today != null ? ` · margin ${rupees(d.margin_today)}` : ''}`} />
       </section>
 
       <div className="owner-grid">
         <Board jobs={d.jobs} quotes={d.pending_approvals} />
         <Feed g={g} messages={d.messages} />
       </div>
+      <OwnerCalls g={g} />
     </div>
   )
 }
@@ -190,8 +204,8 @@ function AgentAsk({ ask, onDone }) {
 
 const COLUMNS = [
   { key: 'intake', label: 'Checked in' },
-  { key: 'washing', label: 'Washing' },
   { key: 'service', label: 'In service' },
+  { key: 'washing', label: 'Washing' },
   { key: 'ready', label: 'Ready' },
 ]
 
@@ -294,14 +308,16 @@ function Stock({ g }) {
   const toast = useToast()
   const [q, setQ] = useState('')
   const [lowOnly, setLowOnly] = useState(false)
+  const [kind, setKind] = useState('all') // all | parts | consumables (C13)
   const inv = useLiveView(() => api('/api/owner/inventory'), { watch: [`garages/${g}/inventory`] })
   const parts = useMemo(() => {
     const words = q.toLowerCase().split(/\s+/).filter(Boolean)
     return (inv.data || [])
       .filter((p) => !lowOnly || p.low_stock)
+      .filter((p) => kind === 'all' || (kind === 'consumables') === (p.kind === 'consumable'))
       .filter((p) => words.every((w) => `${p.name} ${p.fits.join(' ')}`.toLowerCase().includes(w)))
       .sort((a, b) => Number(b.low_stock) - Number(a.low_stock) || a.name.localeCompare(b.name))
-  }, [inv.data, q, lowOnly])
+  }, [inv.data, q, lowOnly, kind])
   const max = Math.max(10, ...(inv.data || []).map((p) => p.qty))
 
   async function restock(p) {
@@ -318,6 +334,11 @@ function Stock({ g }) {
     <section className="card stock enter">
       <div className="row wrap" style={{ marginBottom: 14 }}>
         <input className="input grow" placeholder="Search parts or bikes…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search stock" />
+        <div className="seg" role="group" aria-label="Show">
+          {[['all', 'All'], ['parts', 'Parts'], ['consumables', 'Consumables']].map(([k, label]) => (
+            <button key={k} className={kind === k ? 'on' : ''} aria-pressed={kind === k} onClick={() => setKind(k)}>{label}</button>
+          ))}
+        </div>
         <button className={`btn ${lowOnly ? 'btn-primary' : ''}`} onClick={() => setLowOnly((v) => !v)} aria-pressed={lowOnly}>Low only</button>
       </div>
       {!inv.data ? <Skeleton h={320} /> : parts.length === 0 ? <div className="empty">No parts match.</div> : (
@@ -326,7 +347,11 @@ function Stock({ g }) {
             <li key={p.id} className="part enter" style={{ '--i': Math.min(i, 12) }}>
               <div className="grow stack" style={{ '--gap': '2px' }}>
                 <strong>{p.name}</strong>
-                <span className="muted small">{p.fits.join(', ')}</span>
+                <span className="muted small">
+                  {p.kind === 'consumable'
+                    ? <><span className={`chip chip-sm ${p.billable ? 'chip-accent' : ''}`}>{p.billable ? 'Consumable · billed' : 'Consumable · garage cost'}</span> cost {rupees(p.cost)} · low at {p.low_at}</>
+                    : <>{p.fits.join(', ')}{p.with?.length ? ` · fitted with ${p.with.length} consumable${p.with.length > 1 ? 's' : ''}` : ''}</>}
+                </span>
               </div>
               <div className="part-qty">
                 <span className={`num ${p.low_stock ? 'qty-low' : ''}`}>{p.qty}</span>

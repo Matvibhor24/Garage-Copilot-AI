@@ -1,6 +1,7 @@
 // Pieces shared by the mechanic screen and the owner's voice panel.
 import { useEffect, useRef } from 'react'
 import { Spinner } from '../ui.jsx'
+import { LANGS } from './lang.js'
 
 // The big talk button. It reacts to the mic level every frame (--lvl) and shows the agent's state.
 export function Orb({ voice, ready, mode, label, status, startLabel = 'Start', onStart, onDown, onUp }) {
@@ -45,4 +46,14 @@ export function CameraIcon() {
 }
 export function KeyboardIcon() {
   return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="2" y="6" width="20" height="12" rx="3" /><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10" /></svg>
+}
+
+// Reply language: Auto (follow the speaker) or pinned (C11).
+export function LangPicker({ value, onChange }) {
+  return (
+    <select className="lang-pick" value={value} onChange={(e) => onChange(e.target.value)} aria-label="Reply language"
+      title="Reply language: Auto follows the language you speak">
+      {LANGS.map((l) => <option key={l.code} value={l.code}>{l.code === 'auto' ? 'Auto language' : l.label}</option>)}
+    </select>
+  )
 }

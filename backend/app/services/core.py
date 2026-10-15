@@ -25,6 +25,13 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def minutes_ago(n: int) -> str:
+    """ISO time n minutes before now() (same format, so strings compare in time order)."""
+    from datetime import timedelta
+
+    return (datetime.fromisoformat(now()) - timedelta(minutes=n)).isoformat(timespec="seconds")
+
+
 def minutes_between(start: str, end: str) -> int:
     return round((datetime.fromisoformat(end) - datetime.fromisoformat(start)).total_seconds() / 60)
 

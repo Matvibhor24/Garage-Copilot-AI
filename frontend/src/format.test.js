@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { actionDetail, ago, clock, minutes, plate, rupees } from './format.js'
+import { actionDetail, actionLabel, ago, clock, minutes, plate, rupees } from './format.js'
 
 describe('format', () => {
   it('formats money, plates and durations', () => {
@@ -25,5 +25,25 @@ describe('manual lookups in the activity feed', () => {
       .toBe("clutch free play (Splendor Plus owner's manual p.42)")
     expect(actionDetail(entry({ question: 'wiper blade', vehicle: 'Splendor Plus', found: false, source: '' })))
       .toBe('wiper blade (Splendor Plus: not in the manual)')
+  })
+})
+
+describe('settings and auto-approved quotes in the activity feed (C09)', () => {
+  it('says what changed and that a quote was approved automatically', () => {
+    expect(actionLabel('update_settings')).toBe('changed settings')
+    expect(actionDetail({ action: 'update_settings', details: { summary: 'changed the auto-approve limit from ₹500 to ₹0' } }))
+      .toBe('the auto-approve limit from ₹500 to ₹0')
+    expect(actionDetail({ action: 'send_quote', details: { quote_id: 'Q-77', total: 400, auto: true, quote_limit: 500 } }))
+      .toBe('Q-77 · ₹400 · approved automatically (within the ₹500 limit)')
+    expect(actionDetail({ action: 'send_quote', details: { quote_id: 'Q-77', total: 950, reason: '₹950 > ₹500 limit' } }))
+      .toBe('Q-77 · ₹950 · ₹950 > ₹500 limit')
+  })
+})
+
+describe('web searches in the feed (C14)', () => {
+  it('shows the question and the sites', () => {
+    expect(actionLabel('web_search_fixes')).toBe('searched the web')
+    expect(actionDetail({ action: 'web_search_fixes', details: { question: 'hard start', sites: ['a.example', 'b.example'] } }))
+      .toBe('hard start (web · a.example, b.example)')
   })
 })

@@ -1,0 +1,114 @@
+/* Landing page (C16). Uses the design tokens from styles.css; phone first, wider layouts with min-width. */
+.landing { max-width: 1120px; margin: 0 auto; padding: max(16px, env(safe-area-inset-top)) 16px calc(32px + env(safe-area-inset-bottom)); }
+.landing-top { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); }
+.landing h3 { font-size: 17px; }
+.lp-hero { display: grid; gap: 28px; padding: 28px 0 40px; }
+.lp-hero h1 { font-size: clamp(32px, 7vw, 58px); line-height: 1.04; letter-spacing: -0.02em; }
+.lp-hero-text { display: flex; flex-direction: column; gap: 14px; }
+.lp-lead { font-size: 18px; color: var(--muted); max-width: 34ch; }
+.lp-section { padding: 28px 0; display: flex; flex-direction: column; gap: 16px; scroll-margin-top: 72px; }
+.lp-h2 { font-size: 26px; letter-spacing: -0.01em; }
+.lp-sub { margin-top: -6px; }
+.lp-cards3 { display: grid; gap: 12px; }
+.lp-problem { display: flex; flex-direction: column; gap: 8px; }
+.lp-art { background: var(--surface-2); border-radius: var(--r); padding: 10px; }
+.lp-art svg { display: block; width: 100%; height: 120px; }
+.lp-tiles { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); }
+.lp-tile { display: flex; flex-direction: column; gap: 6px; }
+.lp-tile-icon { font-size: 26px; }
+.lp-try { display: flex; flex-direction: column; gap: 10px; text-decoration: none; color: inherit; transition: transform 240ms var(--ease), box-shadow 240ms; }
+a.lp-try:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+a.lp-try:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.lp-step { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; background: var(--accent-soft); color: var(--accent); }
+.lp-try-lines { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: 14px; }
+.lp-cta { margin-top: auto; font-weight: 650; color: var(--accent); }
+.lp-call { display: flex; flex-direction: column; gap: 12px; margin-top: 4px; }
+.lp-call .input { width: 100%; max-width: 220px; }
+.lp-footer { display: flex; flex-direction: column; gap: 4px; padding: 32px 0 8px; border-top: 1px solid var(--line); margin-top: 24px; font-size: 14px; }
+
+/* How it works diagram */
+.lp-diagram { margin: 0; padding: 12px; overflow: hidden; }
+.lp-diagram svg { display: none; width: 100%; height: auto; }
+.lp-flow-v { list-style: none; margin: 0; padding: 4px; display: flex; flex-direction: column; gap: 22px; }
+.lp-flow-v li { position: relative; background: var(--surface-2); border: 1.5px solid var(--line); border-radius: var(--r); padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 2px; }
+.lp-flow-v li:not(:last-child)::after { content: '↓'; position: absolute; left: 50%; bottom: -21px; transform: translateX(-50%); color: var(--muted); font-weight: 700; }
+.lp-flow-v span { color: var(--muted); font-size: 14px; }
+.lp-flow-v em { font-style: normal; font-size: 12px; font-weight: 650; color: var(--accent); }
+.lp-flow-v .lp-v-accent { background: var(--accent-soft); border-color: var(--accent); }
+.lp-flow-v .lp-v-ok { color: var(--ok); }
+@media (min-width: 640px) {
+  .lp-diagram svg { display: block; }
+  .lp-flow-v { display: none; }
+}
+.d-node rect { fill: var(--surface-2); stroke: var(--line); stroke-width: 1.5; }
+.d-node text { fill: var(--text); font: 600 16px var(--font); text-anchor: middle; }
+.d-accent rect { fill: var(--accent-soft); stroke: var(--accent); }
+.d-soft rect { fill: var(--surface); stroke-dasharray: 5 4; }
+.d-small { fill: var(--muted) !important; font: 500 12px var(--font) !important; text-anchor: middle; }
+.d-left { text-anchor: start !important; }
+.d-line { fill: none; stroke: var(--muted); stroke-width: 2; }
+.d-dash { stroke-dasharray: 5 4; }
+.d-ok { stroke: var(--ok); }
+.d-arrow { fill: var(--muted); }
+.d-badge rect { fill: var(--ok-soft); stroke: var(--ok); }
+.d-badge text { fill: var(--ok); font: 700 12px var(--font); text-anchor: middle; }
+
+/* Problem pictures */
+.a-skin { fill: #d9a77c; }
+.a-grease { fill: #2b2b2b; opacity: 0.7; }
+.a-phone { fill: var(--text); }
+.a-ring path { fill: none; stroke: var(--accent); stroke-width: 3; stroke-linecap: round; }
+.a-paper { fill: var(--surface); stroke: var(--line); stroke-width: 2; }
+.a-ink { fill: var(--line); }
+.a-big { fill: var(--bad); font: 800 20px var(--font); text-anchor: middle; }
+.a-mouth, .a-brow { fill: none; stroke: #6b4a33; stroke-width: 2.5; stroke-linecap: round; }
+.a-eye { fill: #3a2a1f; }
+.a-bay { fill: var(--surface); stroke: var(--line); stroke-width: 2; }
+.a-q { fill: var(--muted); font: 800 22px var(--font); text-anchor: middle; }
+
+/* Hero flow animation */
+.flow { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 14px; border-radius: var(--r-lg);
+  background: var(--surface); box-shadow: var(--shadow); border: 1px solid var(--line); }
+.flow-step { min-height: 112px; border-radius: var(--r); background: var(--surface-2); padding: 12px; display: flex; flex-direction: column;
+  justify-content: center; gap: 8px; opacity: 0.35; transform: scale(0.97); transition: opacity 500ms var(--ease), transform 500ms var(--ease); }
+.flow-step.on { opacity: 1; transform: none; }
+.flow-mic { display: flex; gap: 4px; align-items: center; height: 28px; }
+.flow-mic span { width: 5px; border-radius: 3px; background: var(--accent); height: 100%; transform: scaleY(0.3); }
+.flow-step.on .flow-mic span { animation: wave 1.2s var(--ease) infinite; animation-delay: calc(var(--n, 0) * 90ms); }
+.flow-mic span:nth-child(2) { --n: 1; } .flow-mic span:nth-child(3) { --n: 2; } .flow-mic span:nth-child(4) { --n: 3; } .flow-mic span:nth-child(5) { --n: 4; }
+.flow-bubble { font-size: 13px; font-weight: 600; }
+.flow-card, .flow-phone { background: var(--surface); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 4px; box-shadow: var(--shadow); }
+.flow-phone strong { font-size: 20px; }
+.flow-approve { align-self: flex-start; padding: 4px 10px; border-radius: 999px; background: var(--ok); color: #fff; font-size: 12px; font-weight: 700; }
+.flow-approve.done { background: var(--ok-soft); color: var(--ok); }
+.flow-floor { position: relative; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; height: 64px; }
+.flow-floor .bay { border-radius: 8px; border: 2px dashed var(--line); }
+.flow-floor .bay-hot { border-color: var(--accent); background: var(--accent-soft); }
+.flow-dot { position: absolute; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); top: 25px; left: 6%; transition: left 900ms var(--ease); }
+.flow-step.on .flow-dot { left: 34%; }
+.flow-labels { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 4px 0 0; padding: 0; list-style: none; font-size: 12px; color: var(--muted); }
+.flow-labels li.on { color: var(--text); font-weight: 650; }
+.flow-labels li::before { content: '•'; margin-right: 6px; color: var(--line); }
+.flow-labels li.on::before { color: var(--accent); }
+@media (prefers-reduced-motion: reduce) {
+  .flow-step { transition: none; }
+  .flow-step.on .flow-mic span { animation: none; transform: scaleY(0.6); }
+  .flow-dot { transition: none; }
+}
+
+@media (min-width: 760px) {
+  .lp-cards3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .lp-call { flex-direction: row; align-items: center; justify-content: space-between; }
+}
+@media (min-width: 960px) {
+  .lp-hero { grid-template-columns: 1.05fr 1fr; align-items: center; padding: 64px 0 56px; }
+  .flow-step { min-height: 130px; }
+  .lp-h2 { font-size: 32px; }
+}
+
+/* Owner column: the Try card with the front-desk call right under it */
+.lp-col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.lp-col .lp-call .row { flex-wrap: wrap; }
+.lp-col .lp-call .input { flex: 1 1 160px; min-width: 0; }
+.lp-col .lp-call { flex-direction: column; align-items: stretch; justify-content: flex-start; }

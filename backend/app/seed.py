@@ -77,14 +77,66 @@ FOUR_WHEELER_PARTS = [
     ("bulb-tail", "Tail lamp bulb", ["universal"], 20, 60, 30),
 ]
 
+# Consumables (C13): small items used every time a part is fitted. Plausible prices, not from any catalogue.
+# (id, name, fits, qty, price, cost, billable, low_at). billable: charged to the customer; else the garage's own cost.
+TWO_WHEELER_CONSUMABLES = [
+    ("gasket-clutch-cover", "Clutch cover gasket", ["Splendor", "Splendor Plus", "Passion"], 12, 90, 45, False, 3),
+    ("bolt-m6", "M6 bolt", ["universal"], 150, 5, 2, False, 20),
+    ("bolt-m8", "M8 bolt", ["universal"], 90, 8, 3, False, 15),
+    ("washer-m6", "M6 washer", ["universal"], 200, 2, 1, False, 30),
+    ("split-pin", "Split pin", ["universal"], 80, 3, 1, False, 10),
+    ("grease-10g", "Grease (10 g)", ["universal"], 60, 15, 8, False, 10),
+    ("chain-lube-shot", "Chain lube (one job)", ["universal"], 40, 40, 18, True, 6),
+    ("oil-topup-100", "Engine oil top-up 100 ml", ["universal"], 50, 45, 30, True, 8),
+    ("drain-washer", "Oil drain plug washer", ["universal"], 100, 15, 4, True, 15),
+    ("brake-cleaner-shot", "Brake cleaner (one job)", ["universal"], 30, 30, 20, True, 5),
+]
+FOUR_WHEELER_CONSUMABLES = [
+    ("bolt-m8", "M8 bolt", ["universal"], 120, 10, 4, False, 15),
+    ("bolt-m10", "M10 bolt", ["universal"], 80, 15, 6, False, 10),
+    ("washer-m8", "M8 washer", ["universal"], 150, 3, 1, False, 20),
+    ("split-pin", "Split pin", ["universal"], 60, 5, 2, False, 10),
+    ("grease-20g", "Grease (20 g)", ["universal"], 40, 30, 15, False, 8),
+    ("drain-washer-4w", "Sump plug washer", ["universal"], 80, 25, 8, True, 10),
+    ("brake-cleaner-4w", "Brake cleaner (one job)", ["universal"], 25, 120, 80, True, 5),
+    ("gasket-clutch-4w", "Clutch housing gasket", ["Swift", "Dzire", "Baleno"], 6, 180, 95, True, 2),
+]
+# What each common job uses besides the main part: part_id -> [(consumable_id, qty per part fitted)]
+TWO_WHEELER_WITH = {
+    "clutch-splendor": [("gasket-clutch-cover", 1), ("bolt-m6", 4), ("washer-m6", 4), ("grease-10g", 1)],
+    "clutch-pulsar": [("bolt-m6", 4), ("washer-m6", 4), ("oil-topup-100", 1)],
+    "brake-shoe-splendor": [("split-pin", 2), ("grease-10g", 1), ("brake-cleaner-shot", 1)],
+    "brake-pad-activa": [("split-pin", 2), ("brake-cleaner-shot", 1)],
+    "brake-pad-pulsar": [("brake-cleaner-shot", 1)],
+    "chain-kit-splendor": [("bolt-m8", 4), ("split-pin", 1), ("chain-lube-shot", 1)],
+    "chain-kit-pulsar": [("bolt-m8", 4), ("split-pin", 1), ("chain-lube-shot", 1)],
+    "engine-oil-1l": [("drain-washer", 1)],
+    "engine-oil-800": [("drain-washer", 1)],
+}
+FOUR_WHEELER_WITH = {
+    "clutch-kit-swift": [("gasket-clutch-4w", 1), ("bolt-m10", 6), ("grease-20g", 1)],
+    "brake-pad-swift": [("brake-cleaner-4w", 1), ("grease-20g", 1)],
+    "brake-pad-i20": [("brake-cleaner-4w", 1), ("grease-20g", 1)],
+    "engine-oil-3l": [("drain-washer-4w", 1)],
+    "engine-oil-4l": [("drain-washer-4w", 1)],
+}
+
+
+def part_cost(price: int) -> int:
+    """What the garage paid for a part: about 70% of the selling price, in steps of ₹5 (seed data only)."""
+    return int(round(price * 0.7 / 5) * 5)
+
+
 GARAGES = [
     {
         "id": "shree-auto",
         "doc": {"name": "Shree Auto", "city": "Pune", "next_job_no": 1042, "next_quote_no": 77},
-        "config": {"quote_limit": 500, "lang": "mr", "supplier": "Sai Spares", "reorder_qty": 5, "currency": "INR"},
+        "config": {"quote_limit": 500, "lang": "en", "supplier": "Sai Spares", "reorder_qty": 5, "low_at": 1, "currency": "INR"},
         "owner": {"uid": "o-asha", "name": "Asha", "phone": "+919800000001"},
         "mechanics": [{"uid": "m-raju", "name": "Raju"}, {"uid": "m-salim", "name": "Salim"}],
         "parts": TWO_WHEELER_PARTS,
+        "consumables": TWO_WHEELER_CONSUMABLES,
+        "with": TWO_WHEELER_WITH,
         "customers": [{"id": "c-919800000101", "name": "Ramesh", "phone": "+919800000101", "lang": "mr"}],
         "history": [{
             "id": "J-0957", "plate": "MH12AB1234", "vehicle": "Splendor Plus", "owner": "Ramesh",
@@ -97,10 +149,12 @@ GARAGES = [
     {
         "id": "ganesh-motors",
         "doc": {"name": "Ganesh Motors", "city": "Nashik", "next_job_no": 310, "next_quote_no": 12},
-        "config": {"quote_limit": 2000, "lang": "hi", "supplier": "Nashik Auto Parts", "reorder_qty": 3, "currency": "INR"},
+        "config": {"quote_limit": 2000, "lang": "en", "supplier": "Nashik Auto Parts", "reorder_qty": 3, "low_at": 1, "currency": "INR"},
         "owner": {"uid": "o-vikram", "name": "Vikram", "phone": "+919800000002"},
         "mechanics": [{"uid": "m-sunil", "name": "Sunil"}],
         "parts": FOUR_WHEELER_PARTS,
+        "consumables": FOUR_WHEELER_CONSUMABLES,
+        "with": FOUR_WHEELER_WITH,
         "customers": [],
         "history": [],
     },
@@ -118,9 +172,15 @@ def seed(client, pin: str = "1234") -> None:
         for m in g["mechanics"]:
             ref.collection("mechanics").document(m["uid"]).set(m | {"role": "mechanic", "pin_hash": hash_pin(pin)})
         for part_id, name, fits, qty, price, labour in g["parts"]:
+            doc = {"name": name, "fits": fits, "qty": qty, "price": price, "cost": part_cost(price), "labour": labour,
+                   "low_stock": qty <= g["config"]["low_at"], "reorder_qty": g["config"]["reorder_qty"]}
+            if part_id in g["with"]:
+                doc["with"] = [{"part_id": c, "qty": n} for c, n in g["with"][part_id]]
+            ref.collection("inventory").document(part_id).set(doc)
+        for part_id, name, fits, qty, price, cost, billable, low_at in g["consumables"]:
             ref.collection("inventory").document(part_id).set({
-                "name": name, "fits": fits, "qty": qty, "price": price, "labour": labour,
-                "low_at": 1, "low_stock": qty <= 1, "reorder_qty": g["config"]["reorder_qty"],
+                "name": name, "fits": fits, "qty": qty, "price": price, "cost": cost, "labour": 0, "kind": "consumable",
+                "billable": billable, "low_at": low_at, "low_stock": qty <= low_at, "reorder_qty": low_at * 4,
             })
         for c in g["customers"]:
             ref.collection("customers").document(c["id"]).set({k: v for k, v in c.items() if k != "id"})

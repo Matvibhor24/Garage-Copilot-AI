@@ -4,7 +4,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { DEMO } from '../config.js'
 import { MicIcon } from './Home.jsx'
-import { Bubble, KeyboardIcon, Orb } from '../voice/parts.jsx'
+import { Bubble, KeyboardIcon, LangPicker, Orb } from '../voice/parts.jsx'
+import { readLang, saveLang } from '../voice/lang.js'
 import { useSpaceToTalk, useVoice } from '../voice/useVoice.js'
 
 export default function OwnerVoice() {
@@ -22,7 +23,8 @@ export default function OwnerVoice() {
 }
 
 function VoicePanel({ onClose }) {
-  const { status, items, flags, voice, start } = useVoice({ handsFree: false, role: 'owner' })
+  const [lang, setLang] = useState(() => readLang('owner'))
+  const { status, items, flags, voice, start } = useVoice({ handsFree: false, role: 'owner', lang })
   const [typing, setTyping] = useState(false)
   const [text, setText] = useState('')
   const feed = useRef(null)
@@ -59,7 +61,10 @@ function VoicePanel({ onClose }) {
           <strong>Ask GarageCopilot</strong>
           <span className="muted small">Jobs, approvals, money, stock</span>
         </div>
-        <button className="btn btn-ghost btn-sm" onClick={onClose}>Close</button>
+        <div className="row" style={{ '--gap': '6px' }}>
+          <LangPicker value={lang} onChange={(v) => { saveLang('owner', v); setLang(v) }} />
+          <button className="btn btn-ghost btn-sm" onClick={onClose}>Close</button>
+        </div>
       </header>
 
       <div className="feed-voice" ref={feed} aria-live="polite">

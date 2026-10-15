@@ -6,7 +6,8 @@ import { useLiveView } from '../data/live.js'
 import { DEMO } from '../config.js'
 import { plate, STAGE_LABEL } from '../format.js'
 import { Brand, Spinner, useToast } from '../ui.jsx'
-import { Bubble, CameraIcon, KeyboardIcon, Orb } from '../voice/parts.jsx'
+import { Bubble, CameraIcon, KeyboardIcon, LangPicker, Orb } from '../voice/parts.jsx'
+import { readLang, saveLang } from '../voice/lang.js'
 import { useSpaceToTalk, useVoice } from '../voice/useVoice.js'
 
 // Shift policy (shared garage phone): the voice screen only shows for a mechanic who signed in on this screen.
@@ -127,7 +128,8 @@ function PinSignIn({ onDone }) {
 function VoiceScreen({ me, onSignOut }) {
   const toast = useToast()
   const [handsFree, setHandsFree] = useState(() => localStorage.getItem('gc.handsfree') !== '0')
-  const { status, items, flags, currentJob, setCurrentJob, voice, start, setItems } = useVoice({ handsFree, role: 'mechanic' })
+  const [lang, setLang] = useState(() => readLang('mechanic'))
+  const { status, items, flags, currentJob, setCurrentJob, voice, start, setItems } = useVoice({ handsFree, role: 'mechanic', lang })
   const [typing, setTyping] = useState(false)
   const [text, setText] = useState('')
   const [muted, setMuted] = useState(false)
@@ -200,6 +202,17 @@ function VoiceScreen({ me, onSignOut }) {
     toast(next ? 'Hands-free: just talk' : 'Push to talk: hold the button')
   }
 
+  // A pinned language is sent when the session starts, so changing it starts a fresh one.
+  const restart = useRef(false)
+  function switchLang(next) {
+    saveLang('mechanic', next)
+    restart.current = ready
+    voice.current?.close()
+    setLang(next)
+    toast(next === 'auto' ? 'Replies follow the language you speak' : 'Replies pinned to that language')
+  }
+  useEffect(() => { if (restart.current) { restart.current = false; start() } }, [start])
+
   const hint = DEMO && ready ? voice.current?.nextLine() : ''
 
   return (
@@ -207,6 +220,7 @@ function VoiceScreen({ me, onSignOut }) {
       <header className="voice-top">
         <Brand to="/mechanic" live={mode === 'listening' || mode === 'speaking'} />
         <div className="row" style={{ '--gap': '8px' }}>
+          <LangPicker value={lang} onChange={switchLang} />
           <span className={`chip ${ready ? 'chip-ok' : status.status === 'error' ? 'chip-bad' : ''}`}>
             <span className={`dot ${ready ? 'live-dot' : ''}`} />{ready ? me.name : status.status === 'error' ? 'Offline' : me.name}
           </span>

@@ -40,6 +40,10 @@ service cloud.firestore {
       match /audit_log/{entry} {
         allow read: if ownerOf(g);
       }
+      // Front desk (C15): calls, callbacks, estimates and bookings hold callers' phone numbers: owner only.
+      match /{frontDesk}/{docId} {
+        allow read: if ownerOf(g) && frontDesk in ['calls', 'callbacks', 'estimates', 'bookings'];
+      }
       // A customer's one-job session: their job and its quotes only.
       match /jobs/{jobId} {
         allow read: if customerOf(g, jobId);
@@ -48,7 +52,7 @@ service cloud.firestore {
         allow read: if request.auth != null && request.auth.token.role == 'customer'
           && request.auth.token.garage == g && resource.data.job_id == request.auth.token.job;
       }
-      // requests (idempotency records) are backend-only: no rule = denied.
+      // requests (idempotency records) and web_searches (C14) are backend-only: no rule = denied.
     }
     // phone_index is backend-only: no rule = denied.
     // manuals and manual_chunks (vehicle manual text + embeddings, global) are backend-only: no rule = denied.

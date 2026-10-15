@@ -28,6 +28,8 @@ def dashboard(who: dict, garage_id: str) -> dict:
         "pending_approvals": [d.to_dict() | {"id": d.id} for d in pending.stream()],
         "low_stock": [{"part_id": p["id"], "name": p["name"], "qty": p["qty"]} for p in low],
         "revenue_today": sum(j.get("bill", 0) for j in closed_today),
+        "cost_today": sum(jobs.money(j)["cost"] for j in closed_today),  # parts + consumables used (C13)
+        "margin_today": sum(jobs.money(j)["margin"] for j in closed_today),
         "minutes_per_job": {j["id"]: sum(j.get("stage_minutes", {}).values()) for j in closed_today},
         "reorder_asks": [d.to_dict() for d in asks.stream()],
         "jobs": [jobs.compact(j) for j in open_jobs + closed_today],

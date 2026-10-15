@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 // C07: browser history must never bring back a signed-in mechanic screen. Only a reload keeps the shift.
 async function signIn(page) {
   await page.goto('/')
-  await page.getByText("I'm a mechanic").click()
+  await page.getByRole('link', { name: /Mechanic: Open the mechanic screen/ }).click()
   await page.getByLabel('Your name').fill('Raju')
   for (const d of '1234') await page.getByRole('button', { name: d, exact: true }).click()
   await expect(page.getByRole('button', { name: 'Start shift' })).toBeVisible()
@@ -13,7 +13,7 @@ const pinScreen = (page) => expect(page.getByRole('heading', { name: "Who's work
 test('Back then Forward asks for the PIN again', async ({ page }) => {
   await signIn(page)
   await page.goBack()
-  await expect(page.getByRole('heading', { name: /Hands on the bike/ })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /The AI co-worker for India's garages/ })).toBeVisible()
   await page.goForward()
   await pinScreen(page)
   await expect(page.getByRole('button', { name: 'Start shift' })).toHaveCount(0)

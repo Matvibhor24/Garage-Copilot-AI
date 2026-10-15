@@ -1,6 +1,6 @@
 """Quotes: draft, send (quote_limit rule), customer approve/reject."""
 
-from app import db, gemini, links
+from app import db, links
 from app.services import core, inventory, jobs
 from app.services.core import Invalid, NotFound, get_doc
 
@@ -21,6 +21,12 @@ def draft_quote(who, garage_id, request_id, job_id, parts: list[str], labour: in
             line = lines.setdefault(item["id"], {"part_id": item["id"], "name": item["name"], "qty": 0,
                                                  "price": item["price"], "labour": item.get("labour", 0)})
             line["qty"] += 1
+            # Billable consumables fitted with it (C13), so the customer approves the real total
+            for c, need in inventory.fittings(garage_id, item, 1):
+                if c.get("billable"):
+                    extra = lines.setdefault(c["id"], {"part_id": c["id"], "name": c["name"], "qty": 0,
+                                                       "price": c["price"], "labour": 0})
+                    extra["qty"] += need
         if not lines:
             raise Invalid("a quote needs at least one part")
         for line in lines.values():
@@ -33,7 +39,7 @@ def draft_quote(who, garage_id, request_id, job_id, parts: list[str], labour: in
             "lines": [{k: l[k] for k in ("part_id", "name", "qty", "price", "total")} for l in lines.values()],
             "labour": labour_total,
             "total": parts_total + labour_total,
-            "quote_limit": job.get("quote_limit", 0),
+            "quote_limit": jobs.config(garage_id).get("quote_limit", 0),  # shown now; send_quote re-reads it
             "lang": job.get("lang", "en"),
             "note": note,
             "photo": job.get("last_photo") if with_photo else None,
@@ -70,19 +76,25 @@ def _apply_labour(garage_id: str, quote: dict) -> None:
 
 
 def send_quote(who, garage_id, request_id, quote_id):
-    """Over the garage's quote_limit: send to the customer and wait. Otherwise approve straight away."""
+    """Over the garage's quote_limit (read now, so an owner's change applies to the next quote): send to the
+    customer and wait. Otherwise approve straight away ("Approved automatically: within the ₹X limit")."""
     def work():
         quote = get_doc(quote_ref(garage_id, quote_id))
         if quote["status"] != "draft":
             raise Invalid(f"{quote_id} is already {quote['status']}")
         job = get_doc(jobs.job_ref(garage_id, quote["job_id"]))
         at = core.now()
-        if quote["total"] <= quote["quote_limit"]:
-            quote_ref(garage_id, quote_id).update({"status": "approved", "by": "auto (within quote limit)", "at": at})
+        limit = jobs.config(garage_id).get("quote_limit", 0)  # the owner's current setting, not the draft's copy
+        if quote["total"] <= limit:
+            quote_ref(garage_id, quote_id).update({"status": "approved", "by": "auto (within quote limit)",
+                                                   "auto": True, "quote_limit": limit, "at": at})
             _apply_labour(garage_id, quote)
-            return {"quote_id": quote_id, "status": "approved", "reason": "within quote limit"}, []
-        text = gemini.translate(quote_text(job, quote), quote["lang"])
-        quote_ref(garage_id, quote_id).update({"status": "pending", "sent_at": at, "text": text})
+            return {"quote_id": quote_id, "status": "approved", "auto": True, "total": quote["total"],
+                    "quote_limit": limit, "reason": f"within the ₹{limit} limit",
+                    "say": f"Approved automatically: within the ₹{limit} limit"}, []
+        texts = jobs.customer_texts(quote_text(job, quote), quote["lang"])
+        text = texts["text"]
+        quote_ref(garage_id, quote_id).update({"status": "pending", "sent_at": at, "quote_limit": limit, **texts})
         jobs.job_ref(garage_id, quote["job_id"]).update({"pending_quote": quote_id})
         message = {
             "to": quote["customer_id"],
@@ -91,11 +103,28 @@ def send_quote(who, garage_id, request_id, quote_id):
             "quote_id": quote_id,
             "lang": quote["lang"],
             "text": text + f"\n{links.job_url(garage_id, quote['job_id'])}",
+            "text_en": texts["text_en"],
+            "text_hi": texts["text_hi"],
         }
-        reason = f"₹{quote['total']} > ₹{quote['quote_limit']} limit"
-        return {"quote_id": quote_id, "status": "pending", "reason": reason}, [message]
+        reason = f"₹{quote['total']} > ₹{limit} limit"
+        return {"quote_id": quote_id, "status": "pending", "total": quote["total"], "reason": reason}, [message]
 
     return core.run(who, garage_id, request_id, "send_quote", work)
+
+
+def resend_quote(who, garage_id, request_id, quote_id):
+    """Send a pending quote to the customer again (same text, same link), e.g. when they call and ask (C15)."""
+    def work():
+        quote = get_doc(quote_ref(garage_id, quote_id))
+        if quote["status"] != "pending":
+            raise Invalid(f"{quote_id} is {quote['status']}")
+        message = {"to": quote["customer_id"], "kind": "quote", "job_id": quote["job_id"], "quote_id": quote_id,
+                   "lang": quote.get("lang", "en"),
+                   "text": quote.get("text", "") + f"\n{links.job_url(garage_id, quote['job_id'])}",
+                   "text_en": quote.get("text_en", ""), "text_hi": quote.get("text_hi", "")}
+        return {"quote_id": quote_id, "sent": True}, [message]
+
+    return core.run(who, garage_id, request_id, "resend_quote", work)
 
 
 def decide_quote(who, garage_id, job_id, quote_id, decision: str):

@@ -1,8 +1,10 @@
 """WebSocket voice gateway: phone <-> this service <-> Gemini Live (through ADK run_live).
 
-Protocol on /ws/voice?token=<Firebase ID token>[&ptt=1]
+Protocol on /ws/voice?token=<Firebase ID token>[&ptt=1][&lang=en|hi|mr]
+lang pins the reply language (the screen's language picker); without it the agent follows the speaker (C11).
 The caller's role (from the token) picks the agent: mechanics get the Live job agent, owners the owner agent
-(read-only questions about the day, plus answering reorder asks).
+(read-only questions about the day, plus answering reorder asks), and a front-desk call token ("call.…", from
+POST /api/call/start or /api/j/{token}/call) the front desk agent for a customer calling the garage (C15).
   client -> server  binary: 16 kHz mono PCM16 mic audio
                     text JSON: {"type": "text", "text": ...}            typed fallback
                                {"type": "start"} / {"type": "stop"}     push-to-talk (ptt=1)
@@ -23,8 +25,8 @@ import uuid
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from google.genai import types
 
-from app import auth, config, speech, tools
-from app.services import voice
+from app import auth, config, language, links, speech, tools
+from app.services import frontdesk, voice
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -34,7 +36,7 @@ MIC_MIME = "audio/pcm;rate=16000"
 NOTICE_POLL_SECONDS = 2.0
 
 
-def run_config(push_to_talk: bool):
+def run_config(push_to_talk: bool, lang: str = ""):
     from google.adk.agents import RunConfig
     from google.adk.agents.run_config import StreamingMode
 
@@ -43,9 +45,15 @@ def run_config(push_to_talk: bool):
         realtime = types.RealtimeInputConfig(
             automatic_activity_detection=types.AutomaticActivityDetection(disabled=True))
     speech = None
+    voice_config = None
     if config.LIVE_VOICE:
-        speech = types.SpeechConfig(voice_config=types.VoiceConfig(
-            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=config.LIVE_VOICE)))
+        voice_config = types.VoiceConfig(prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=config.LIVE_VOICE))
+    # A pinned language goes into the instruction always, and into speech_config.language_code only when
+    # LIVE_LANGUAGE_CODE=1: native-audio Live models choose the language themselves and reject language_code
+    # ("Unsupported language code"); half-cascade Live models use it.
+    code = language.LANGUAGE_CODES.get(language.pinned(lang)) if config.LIVE_LANGUAGE_CODE else None
+    if voice_config or code:
+        speech = types.SpeechConfig(voice_config=voice_config, language_code=code)
     return RunConfig(
         streaming_mode=StreamingMode.BIDI,
         speech_config=speech,
@@ -61,6 +69,8 @@ def run_config(push_to_talk: bool):
 def agent_for(role: str):
     from app import agent
 
+    if role == "caller":
+        return agent.build_front_desk_agent()
     return agent.build_owner_agent() if role == "owner" else agent.build_live_agent()
 
 
@@ -71,8 +81,8 @@ async def live_events(state: dict, queue, push_to_talk: bool):
 
     runner = Runner(app_name=APP_NAME, agent=agent_for(state["role"]), session_service=InMemorySessionService())
     session = await runner.session_service.create_session(app_name=APP_NAME, user_id=state["uid"], state=state)
-    async for event in runner.run_live(user_id=state["uid"], session_id=session.id,
-                                       live_request_queue=queue, run_config=run_config(push_to_talk)):
+    async for event in runner.run_live(user_id=state["uid"], session_id=session.id, live_request_queue=queue,
+                                       run_config=run_config(push_to_talk, state.get("pinned_lang", ""))):
         yield event
 
 
@@ -139,8 +149,20 @@ def audio_parts(event):
             if p.inline_data and p.inline_data.data and (p.inline_data.mime_type or "").startswith("audio/")]
 
 
-async def downstream(ws: WebSocket, events, who: dict, state: dict) -> None:
+def check_language(queue, state: dict, heard: str, said: str) -> bool:
+    """After a turn in Auto mode: a reply clearly in another script than what was heard is logged, and a one-line
+    reminder is added to the session for the next turn (partial content: Gemini doesn't answer it)."""
+    if state.get("pinned_lang") or not language.mismatch(heard, said):
+        return False
+    log.warning("language mismatch: heard %r, said %r", heard[:80], said[:80])
+    if queue is not None:
+        queue.send_content(types.Content(role="user", parts=[types.Part(text=language.reminder(heard))]), partial=True)
+    return True
+
+
+async def downstream(ws: WebSocket, events, who: dict, state: dict, queue=None) -> None:
     streamed = False  # audio already sent in this turn
+    heard, said = [], []  # this turn's final transcriptions, for the language check
     async for event in events:
         # Each audio chunk is sent once. Streamed chunks come in events that are not marked partial=False;
         # an event explicitly marked partial=False is an aggregate of the turn, so its audio is skipped
@@ -155,10 +177,13 @@ async def downstream(ws: WebSocket, events, who: dict, state: dict) -> None:
                 if part.function_response:
                     await ws.send_json({"type": "tool", "name": part.function_response.name,
                                         "result": part.function_response.response})
-        speaker = "owner" if who["role"] == "owner" else "mechanic"
+        speaker = who["role"] if who["role"] in ("owner", "caller") else "mechanic"
         for role, tr in ((speaker, event.input_transcription), ("agent", event.output_transcription)):
             if tr and tr.text:
                 await ws.send_json({"type": "transcript", "role": role, "text": tr.text, "final": bool(tr.finished)})
+                (said if role == "agent" else heard).append(tr.text)
+                if role == "caller" and tr.finished:  # the caller's words become the call's summary for the owner
+                    await asyncio.to_thread(frontdesk.note_heard, who["garage_id"], who["call_id"], tr.text)
         delta = getattr(event.actions, "state_delta", None) or {}
         if delta.get(tools.CURRENT_JOB) and delta[tools.CURRENT_JOB] != state.get(tools.CURRENT_JOB):
             state[tools.CURRENT_JOB] = delta[tools.CURRENT_JOB]
@@ -167,6 +192,8 @@ async def downstream(ws: WebSocket, events, who: dict, state: dict) -> None:
             await ws.send_json({"type": "interrupted"})
         if event.turn_complete:
             await ws.send_json({"type": "turn_complete"})
+            check_language(queue, state, " ".join(heard), " ".join(said))
+            heard, said = [], []
         if event.interrupted or event.turn_complete:
             streamed = False
 
@@ -177,7 +204,7 @@ async def notices(queue, who: dict, conn: str) -> None:
     while True:
         if not await asyncio.to_thread(voice.is_current, who, conn):
             raise Replaced()
-        if who["role"] == "owner":  # the owner sees updates on the dashboard; nothing to speak
+        if who["role"] in ("owner", "caller"):  # nothing to speak: the owner sees updates on the dashboard
             await asyncio.sleep(NOTICE_POLL_SECONDS)
             continue
         for m in await asyncio.to_thread(voice.take_headset_messages, who):
@@ -186,20 +213,32 @@ async def notices(queue, who: dict, conn: str) -> None:
 
 
 @router.websocket("/ws/voice")
-async def voice_ws(ws: WebSocket, token: str = "", ptt: int = 0):
+async def voice_ws(ws: WebSocket, token: str = "", ptt: int = 0, lang: str = ""):
     await ws.accept()
-    try:
-        who = auth.to_actor(auth.claims_from_header(f"Bearer {token}"))
-    except HTTPException as e:
-        await ws.close(code=4401 if e.status_code == 401 else 4403, reason=str(e.detail))
-        return
+    if token.startswith("call."):  # a customer calling the garage (front desk)
+        try:
+            call = links.read_caller_token(token)
+        except links.BadLink as e:
+            await ws.close(code=4401, reason=str(e))
+            return
+        who = frontdesk.caller(call["garage_id"], call["phone"], call["verified"], call["call_id"], call["job_id"])
+    else:
+        try:
+            who = auth.to_actor(auth.claims_from_header(f"Bearer {token}"))
+        except HTTPException as e:
+            await ws.close(code=4401 if e.status_code == 401 else 4403, reason=str(e.detail))
+            return
     conn = uuid.uuid4().hex[:12]
     await asyncio.to_thread(voice.claim_session, who, conn)
     state = await asyncio.to_thread(voice.load_session, who)
+    state["pinned_lang"] = language.pinned(lang)
+    if who["role"] == "caller":
+        state.update(phone=who["phone"], verified=who["verified"], call_id=who["call_id"], call_job=who["job_id"],
+                     current_job="")
     queue = new_queue()
     tasks = [
         asyncio.create_task(upstream(ws, queue, bool(ptt))),
-        asyncio.create_task(downstream(ws, live_events(state, queue, bool(ptt)), who, state)),
+        asyncio.create_task(downstream(ws, live_events(state, queue, bool(ptt)), who, state, queue)),
         asyncio.create_task(notices(queue, who, conn)),
     ]
     log.info("voice session %s opened for %s/%s", conn, who["garage_id"], who["uid"])
@@ -214,4 +253,6 @@ async def voice_ws(ws: WebSocket, token: str = "", ptt: int = 0):
         for task in tasks:
             task.cancel()
         queue.close()
+        if who["role"] == "caller":
+            await asyncio.to_thread(frontdesk.end_call, who["garage_id"], who["call_id"])
         log.info("voice session %s closed for %s/%s", conn, who["garage_id"], who["uid"])

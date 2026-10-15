@@ -5,7 +5,9 @@ import { DEMO } from '../config.js'
 import { rupees, STAGE_LABEL } from '../format.js'
 
 // role: 'mechanic' or 'owner' (picks the demo script; the real backend picks the agent from the token).
-export function useVoice({ handsFree = false, role = 'mechanic' } = {}) {
+// lang: 'auto' or a pinned reply language (src/voice/lang.js); changing it starts a new session.
+// getToken: only for a front-desk call (role 'caller', C15): fetches the call's token when the call starts.
+export function useVoice({ handsFree = false, role = 'mechanic', lang = 'auto', getToken } = {}) {
   const [status, setStatus] = useState({ status: 'idle' })
   const [items, setItems] = useState([])
   const [flags, setFlags] = useState({ listening: false, speaking: false, thinking: false })
@@ -44,12 +46,13 @@ export function useVoice({ handsFree = false, role = 'mechanic' } = {}) {
     try {
       voice.current?.close()
       const mod = DEMO ? await import('../demo/voice.js') : await import('../voice/client.js')
-      voice.current = DEMO ? mod.createDemoVoice({ onEvent, role }) : mod.createVoice({ onEvent, handsFree })
+      if (DEMO && getToken) await getToken() // the demo backend opens the call record (front desk, C15)
+      voice.current = DEMO ? mod.createDemoVoice({ onEvent, role, lang }) : mod.createVoice({ onEvent, handsFree, lang, role, ...(getToken ? { getToken } : {}) })
       await voice.current.connect()
     } finally {
       starting.current = false
     }
-  }, [onEvent, handsFree, role])
+  }, [onEvent, handsFree, role, lang, getToken])
 
   // Leaving the screen or the page (tab closed, Back, bfcache) ends the session and frees the mic.
   useEffect(() => {
@@ -67,7 +70,7 @@ export function toolText(name, r = {}) {
     case 'get_vehicle_history': return r.summary || 'History checked'
     case 'update_stage': return `${r.job_id} → ${STAGE_LABEL[r.stage] || r.stage}`
     case 'check_stock': return r.matches?.[0] ? `${r.matches[0].name}: ${r.matches[0].qty} in stock · ${rupees(r.matches[0].price)}` : 'Not in stock'
-    case 'log_part_used': return `Stock updated · ${r.qty_left} left${r.low_stock ? ' (low)' : ''}`
+    case 'log_part_used': return `Stock updated · ${r.qty_left} left${r.low_stock ? ' (low)' : ''}${r.fittings?.length ? ` · +${r.fittings.length} fittings` : ''}${r.shortfall?.length ? ' · short on fittings' : ''}`
     case 'close_job': return `${r.job_id} closed · ${rupees(r.bill)}`
     case 'describe_photo': return `Photo: “${r.caption}”`
     case 'quote_agent': return `Quote ${r.quote_id || ''} drafted${r.total ? ` · ${rupees(r.total)}` : ''}`
@@ -75,11 +78,19 @@ export function toolText(name, r = {}) {
     case 'inventory_agent': return 'Owner asked about reorder'
     case 'today_summary': return `Today: ${r.open_jobs} open · ${rupees(r.revenue_today)}`
     case 'list_open_jobs': return `${r.count} open job${r.count === 1 ? '' : 's'}`
-    case 'job_details': return `${r.job_id} · ${r.total_minutes} min`
+    case 'job_details': return r.money && r.total_minutes == null ? `${r.job_id} · cost ${rupees(r.money.cost)} · margin ${rupees(r.money.margin)}` : `${r.job_id} · ${r.total_minutes} min`
     case 'pending_approvals': return `${r.count} waiting for customers`
     case 'low_stock': return `${r.low_stock?.length || 0} parts low`
     case 'recent_activity': return 'Activity checked'
     case 'lookup_manual': return r.found ? `Manual · ${r.source}` : 'Not in the manual'
+    case 'web_search_fixes': return r.sites?.length ? `Web · ${r.sites.join(', ')}` : 'Web · nothing found'
+    case 'my_vehicle_status': return r.verified === false ? 'Details not shared on this line' : `${r.jobs?.length || 0} vehicle${r.jobs?.length === 1 ? '' : 's'} found`
+    case 'service_wait_time': return `Wait · ${r.vehicles_ahead} ahead · starts in ~${r.start_in_minutes?.[0]}–${r.start_in_minutes?.[1]} min`
+    case 'send_status_link_again': return 'Status link sent to the number on file'
+    case 'send_quote_again': return `Quote ${r.quote_id || ''} sent again`
+    case 'request_estimate': return `Estimate ${r.estimate_id} · owner will confirm`
+    case 'book_dropoff': return `Drop-off booked · ${r.when}`
+    case 'request_callback': return 'Callback requested'
     case 'answer_reorder': return r.status === 'ordered' ? `Ordered ${r.qty} from ${r.supplier}` : 'Reorder: ask again later'
     default: return name.replaceAll('_', ' ')
   }

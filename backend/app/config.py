@@ -18,12 +18,18 @@ DB_BACKEND = _env("DB_BACKEND", "firestore")
 LIVE_MODEL = _env("LIVE_MODEL", "gemini-live-2.5-flash-native-audio")
 TEXT_MODEL = _env("TEXT_MODEL", "gemini-2.5-flash")
 VISION_MODEL = _env("VISION_MODEL", "gemini-2.5-flash")
+# Web search for known fixes (C14): a sub-agent with ADK's google_search (Gemini 2.x or later), default TEXT_MODEL
+WEB_SEARCH_MODEL = _env("WEB_SEARCH_MODEL", TEXT_MODEL)
 
 # Agent voice. The Live API has no speaking-rate setting (only a voice name), so pace is an instruction.
 # LIVE_VOICE: a prebuilt voice name (e.g. Kore, Charon, Aoede); empty = the model's default voice.
 # VOICE_PACE: "slower" (default: a little slower than normal, short pauses around numbers) or "normal".
 LIVE_VOICE = _env("LIVE_VOICE")
 VOICE_PACE = _env("VOICE_PACE", "slower")
+# A language pinned on a voice screen also goes into speech_config.language_code only when this is 1. Leave it 0
+# for native-audio Live models (they pick the language themselves and reject language_code); set 1 for a
+# half-cascade Live model (e.g. gemini-live-2.5-flash). The instruction always carries the pinned language.
+LIVE_LANGUAGE_CODE = _env("LIVE_LANGUAGE_CODE", "0") == "1"
 
 # Push-to-talk: a held turn reaches Gemini only if it has at least this much speech (see app/speech.py),
 # so a short tap, silence or background noise can never become a command.
@@ -45,6 +51,10 @@ MANUAL_MIN_SCORE = float(_env("MANUAL_MIN_SCORE", "0.6"))  # cosine similarity; 
 # Customer links
 LINK_SECRET = _env("LINK_SECRET")  # HMAC key for /j/:token links
 LINK_TTL_HOURS = int(_env("LINK_TTL_HOURS", "72"))
+# AI front desk (C15): a web call gets a short-lived caller token; calls are rate-limited per number and per garage
+CALL_TOKEN_MINUTES = int(_env("CALL_TOKEN_MINUTES", "15"))
+CALLS_PER_PHONE_HOUR = int(_env("CALLS_PER_PHONE_HOUR", "6"))
+CALLS_PER_GARAGE_HOUR = int(_env("CALLS_PER_GARAGE_HOUR", "60"))
 PUBLIC_BASE_URL = _env("PUBLIC_BASE_URL", "http://localhost:5173")
 
 # Garage defaults used when a garage config does not set them

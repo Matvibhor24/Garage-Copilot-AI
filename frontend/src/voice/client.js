@@ -4,12 +4,15 @@
 //   tool {name, result}, listening {on}, speaking {on}, thinking {on}, turn_complete, interrupted, notice {text}
 import { wsBase } from '../config.js'
 import { idToken } from '../data/auth.js'
+import { langParam } from './lang.js'
 import { AGENT_RATE, downsample, floatTo16, int16ToFloat, rms } from './pcm.js'
 
 const SEND_EVERY = 640 // samples at 16 kHz = 40 ms
 const ECHO_TAIL = 0.25 // s after the agent stops speaking before the mic is sent again (hands-free)
 
-export function createVoice({ onEvent, handsFree = true }) {
+// getToken: where the socket token comes from (default the signed-in staff member's ID token; a front-desk call
+// passes its caller token, C15). role: who is talking, for typed messages in the transcript.
+export function createVoice({ onEvent, handsFree = true, lang = 'auto', getToken = idToken, role = 'mechanic' }) {
   let ws = null
   let connecting = false
   let mic = null
@@ -141,16 +144,16 @@ export function createVoice({ onEvent, handsFree = true }) {
         onEvent({ type: 'status', status: 'error', message: 'Microphone blocked. Allow it in the browser settings.' })
         return
       }
-      const token = await idToken()
+      const token = await getToken()
       if (closed) return release()
-      ws = new WebSocket(`${wsBase()}/ws/voice?token=${encodeURIComponent(token)}${handsFree ? '' : '&ptt=1'}`)
+      ws = new WebSocket(`${wsBase()}/ws/voice?token=${encodeURIComponent(token)}${handsFree ? '' : '&ptt=1'}${langParam(lang)}`)
       ws.binaryType = 'arraybuffer'
       ws.onopen = () => onEvent({ type: 'status', status: 'ready' })
       ws.onmessage = onMessage
       ws.onclose = (e) => {
         release()
         closed = true
-        const message = e.code === 4401 || e.code === 4403 ? 'Signed out. Please sign in again.'
+        const message = e.code === 4401 || e.code === 4403 ? (role === 'caller' ? 'The call ended. Call again if you need more help.' : 'Signed out. Please sign in again.')
           : e.code === 4409 ? 'Opened on another screen.' : 'Connection lost.'
         onEvent({ type: 'status', status: 'error', message, code: e.code })
       }
@@ -175,7 +178,7 @@ export function createVoice({ onEvent, handsFree = true }) {
     },
     sendText(text) {
       sendJson({ type: 'text', text })
-      onEvent({ type: 'transcript', role: 'mechanic', text, final: true })
+      onEvent({ type: 'transcript', role, text, final: true })
       onEvent({ type: 'thinking', on: true })
     },
     level() {

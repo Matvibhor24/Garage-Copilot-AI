@@ -125,3 +125,14 @@ describe('push-to-talk', () => {
     expect(events.at(-1)).toEqual({ type: 'note', text: "Didn't catch that. Hold the button and speak." })
   })
 })
+
+describe('reply language (C11)', () => {
+  it('sends a pinned language with the session start, and nothing for Auto', async () => {
+    const pinned = createVoice({ onEvent: () => {}, handsFree: false, lang: 'hi' })
+    await pinned.connect()
+    expect(sockets[0].url).toContain('&ptt=1&lang=hi')
+    const auto = createVoice({ onEvent: () => {}, lang: 'auto' })
+    await auto.connect()
+    expect(sockets[1].url).not.toContain('lang=')
+  })
+})

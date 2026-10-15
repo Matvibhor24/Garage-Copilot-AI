@@ -3,6 +3,9 @@ const env = import.meta.env
 
 export const DEMO = env.VITE_DEMO === '1'
 export const API_BASE = (env.VITE_API_BASE || '').replace(/\/$/, '')
+// The garage the landing page's "Call the garage" button calls (C15/C16)
+export const FRONT_DESK_GARAGE = env.VITE_FRONT_DESK_GARAGE || 'shree-auto'
+export const FRONT_DESK_GARAGE_NAME = env.VITE_FRONT_DESK_GARAGE_NAME || 'Shree Auto'
 
 export const FIREBASE = env.VITE_FIREBASE_API_KEY
   ? {

@@ -7,8 +7,8 @@ from app import db, gemini, links
 from app.services import core
 from app.services.core import Invalid, NotFound, get_doc
 
-# Stage names in order. "done" means closed and ready for pickup.
-STAGES = ["intake", "washing", "service", "waiting_approval", "ready", "done"]
+# Stage names in order. Washing comes after the repair, just before delivery (C10). "done" = closed, ready for pickup.
+STAGES = ["intake", "service", "waiting_approval", "washing", "ready", "done"]
 
 
 def config(garage_id: str) -> dict:
@@ -41,13 +41,26 @@ def find_job(who: dict, garage_id: str, ref: str) -> dict:
     raise NotFound(f"no open job matching '{ref}'")
 
 
+def money(job: dict) -> dict:
+    """The job's bill split (parts + billable consumables + labour = bill), what the parts and consumables cost
+    the garage, and the margin (C13)."""
+    lines = job.get("parts", [])
+    parts = sum(line["total"] for line in lines if not line.get("consumable"))
+    consumables = sum(line["total"] for line in lines if line.get("consumable"))
+    labour = job.get("labour", 0)
+    cost = sum(line.get("cost", 0) for line in lines) + sum(c.get("cost", 0) for c in job.get("consumables", []))
+    bill = parts + consumables + labour
+    return {"parts": parts, "consumables": consumables, "labour": labour, "bill": bill, "cost": cost,
+            "margin": bill - cost}
+
+
 COMPACT_FIELDS = ("plate", "vehicle", "owner", "stage", "status", "stage_started_at", "mechanic_name", "bill",
                   "pending_quote", "closed_at", "complaint")
 
 
 def compact(job: dict) -> dict:
     """The fields a job card on a screen needs."""
-    return {"id": job["id"]} | {k: job.get(k) for k in COMPACT_FIELDS}
+    return {"id": job["id"]} | {k: job.get(k) for k in COMPACT_FIELDS} | {"money": money(job)}
 
 
 def list_jobs(who: dict, garage_id: str, open_only: bool = True) -> list[dict]:
@@ -77,14 +90,23 @@ def normalise_plate(plate: str) -> str:
     return re.sub(r"[^A-Z0-9]", "", plate.upper())
 
 
-def upsert_customer(garage_id: str, name: str, phone: str, lang: str) -> str:
+def upsert_customer(garage_id: str, name: str, phone: str, lang: str, default_lang: str = "en") -> tuple[str, str]:
+    """(customer_id, their language). A language the mechanic gave wins; otherwise a returning customer keeps theirs
+    and a new one gets the garage default (English unless the owner changed it in Settings)."""
     key = re.sub(r"\D", "", phone) or re.sub(r"\W", "", name.lower())
     customer_id = f"c-{key}"
-    data = {"name": name, "phone": phone}
-    if lang:
-        data["lang"] = lang
-    core.garage(garage_id).collection("customers").document(customer_id).set(data, merge=True)
-    return customer_id
+    ref = core.garage(garage_id).collection("customers").document(customer_id)
+    customer_lang = lang or (ref.get().to_dict() or {}).get("lang") or default_lang or "en"
+    ref.set({"name": name, "phone": phone, "lang": customer_lang}, merge=True)
+    return customer_id, customer_lang
+
+
+def customer_texts(text_en: str, lang: str) -> dict:
+    """A customer message in their language for WhatsApp, plus English and Hindi for the status page's switch (C12).
+    Translated once, when the message is sent."""
+    text_hi = gemini.translate(text_en, "hi")
+    text = text_en if lang in ("", "en") else text_hi if lang == "hi" else gemini.translate(text_en, lang)
+    return {"text": text, "text_en": text_en, "text_hi": text_hi}
 
 
 def bill_of(job: dict) -> int:
@@ -93,14 +115,10 @@ def bill_of(job: dict) -> int:
 
 def status_link_message(garage_id: str, job_id: str, job: dict) -> dict:
     garage_name = (core.garage(garage_id).get().to_dict() or {}).get("name", "the garage")
-    return {
-        "to": job["customer_id"],
-        "kind": "status_link",
-        "job_id": job_id,
-        "lang": job.get("lang", "en"),
-        "text": gemini.translate(f"Hi {job['owner']}, your {job['vehicle']} is checked in at {garage_name}. "
-                                 f"Track it: {links.job_url(garage_id, job_id)}", job.get("lang", "en")),
-    }
+    text_en = (f"Hi {job['owner']}, your {job['vehicle']} is checked in at {garage_name}. "
+               f"Track it: {links.job_url(garage_id, job_id)}")
+    return {"to": job["customer_id"], "kind": "status_link", "job_id": job_id, "lang": job.get("lang", "en"),
+            **customer_texts(text_en, job.get("lang", "en"))}
 
 
 def send_status_link(who, garage_id, request_id, job_id):
@@ -116,8 +134,7 @@ def create_job(who, garage_id, request_id, plate, vehicle, owner_name, phone="",
     def work():
         settings = config(garage_id)
         at = core.now()
-        customer_lang = lang or settings.get("lang", "en")
-        customer_id = upsert_customer(garage_id, owner_name, phone, customer_lang)
+        customer_id, customer_lang = upsert_customer(garage_id, owner_name, phone, lang, settings.get("lang", "en"))
         job = {
             "plate": normalise_plate(plate),
             "vehicle": vehicle,
@@ -191,16 +208,16 @@ def close_job(who, garage_id, request_id, job_id):
             "kind": "final_bill",
             "job_id": job_id,
             "lang": job.get("lang", "en"),
-            "text": gemini.translate(f"Hi {job['owner']}, your {job['vehicle']} is ready for pickup. "
-                                     f"Final bill: ₹{bill}.", job.get("lang", "en")),
+            **customer_texts(f"Hi {job['owner']}, your {job['vehicle']} is ready for pickup. Final bill: ₹{bill}.",
+                             job.get("lang", "en")),
         }
         return {"job_id": job_id, "stage": "done", "bill": bill, "parts": job["parts"], "labour": job["labour"]}, [message]
 
     return core.run(who, garage_id, request_id, "close_job", work)
 
 
-STAGE_LABELS = {"intake": "Checked in", "washing": "Washing", "service": "In service",
-                "waiting_approval": "Waiting for your approval", "ready": "Ready for pickup", "done": "Ready for pickup"}
+STAGE_LABELS = {"intake": "Checked in", "service": "In service", "waiting_approval": "Waiting for your approval",
+                "washing": "Washing", "ready": "Ready for pickup", "done": "Ready for pickup"}
 
 
 def _with_photo_url(garage_id: str, quote: dict) -> dict:
@@ -218,6 +235,11 @@ def customer_view(garage_id: str, job_id: str) -> dict:
                     key=lambda s: s["started_at"])
     garage_doc = core.garage(garage_id).get().to_dict() or {}
     quotes = core.garage(garage_id).collection("quotes").where(filter=db.FieldFilter("job_id", "==", job_id))
+    sent = core.garage(garage_id).collection("messages").where(filter=db.FieldFilter("job_id", "==", job_id))
+    messages = sorted(({"kind": m["kind"], "at": m["at"], "text_en": m.get("text_en") or m["text"],
+                        "text_hi": m.get("text_hi") or m["text"]}
+                       for m in (d.to_dict() for d in sent.stream()) if m.get("to") == job["customer_id"]),
+                      key=lambda m: m["at"])
     return {
         "garage": garage_doc.get("name", ""),
         "job_id": job_id,
@@ -233,6 +255,7 @@ def customer_view(garage_id: str, job_id: str) -> dict:
         "parts": [{k: p[k] for k in ("name", "qty", "price", "total")} for p in job.get("parts", [])],
         "labour": job.get("labour", 0),
         "bill": job.get("bill", 0),
+        "messages": messages,  # what the garage sent this customer, in English and Hindi (C12)
     }
 
 
