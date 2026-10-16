@@ -221,10 +221,10 @@ STAGE_LABELS = {"intake": "Checked in", "service": "In service", "waiting_approv
 
 
 def _with_photo_url(garage_id: str, quote: dict) -> dict:
-    from app import storage
+    from app.services import photos
 
     if quote.get("photo"):
-        quote["photo_url"] = storage.signed_url(quote["photo"])
+        quote["photo_url"] = photos.photo_url(garage_id, quote["photo"])  # never fails the customer page (C21)
     return quote
 
 

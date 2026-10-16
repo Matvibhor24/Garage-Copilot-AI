@@ -33,6 +33,12 @@ export function useVoice({ handsFree = false, role = 'mechanic', lang = 'auto', 
       }
       case 'notice': return setItems((list) => [...list, { id: Math.random(), kind: 'notice', text: e.text, final: true }])
       case 'note': return setItems((list) => [...list, { id: Math.random(), kind: 'note', text: e.text, final: true }])
+      case 'blocked': // the topic guard cut an off-topic answer: drop its half-shown words, say why
+        return setItems((list) => {
+          const last = list[list.length - 1]
+          const kept = last && last.kind === 'agent' && !last.final ? list.slice(0, -1) : list
+          return [...kept, { id: Math.random(), kind: 'note', text: 'Only garage work here: that request was blocked.', final: true }]
+        })
       default:
     }
   }, [])

@@ -2,7 +2,7 @@
 // English by default with an English | हिंदी switch (C12); every string comes from src/i18n.js.
 import { useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { api } from '../data/api.js'
+import { apiUrl, api } from '../data/api.js'
 import { customerFirestore } from '../data/auth.js'
 import { useLiveView } from '../data/live.js'
 import { clock, minutes, plate, rupees } from '../format.js'
@@ -220,7 +220,7 @@ function QuoteCard({ q, token, owner, onDone, lang }) {
 
       {q.photo_url && (
         <figure className="quote-photo">
-          <img src={q.photo_url} alt={q.photo_caption || tr('photoAlt')} />
+          <img src={apiUrl(q.photo_url)} alt={q.photo_caption || tr('photoAlt')} />
           {q.photo_caption && <figcaption>“{q.photo_caption}”</figcaption>}
         </figure>
       )}

@@ -13,6 +13,10 @@ EMULATOR = os.environ.get("TEST_AGAINST_EMULATOR") == "1" and os.environ.get("FI
 def test_settings(monkeypatch):
     monkeypatch.setattr(config, "LINK_SECRET", "test-secret")
     monkeypatch.setattr(config, "PUBLIC_BASE_URL", "https://gc.app")
+    monkeypatch.setattr(config, "TOPIC_GUARD", False)
+    from app import consent
+
+    consent.reset()  # no real Gemini calls; tests/test_topic_guard.py turns it on
     storage.use_fake()
 
 

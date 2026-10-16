@@ -2,7 +2,7 @@
 // that become cards on phones, loading and empty states, ₹ with Indian digit grouping.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { API_BASE, DEMO } from '../config.js'
-import { api, requestId } from '../data/api.js'
+import { apiUrl, api, requestId } from '../data/api.js'
 import { idToken } from '../data/auth.js'
 import { clock, minutes, plate, rupees, STAGE_LABEL } from '../format.js'
 import { ErrorNote, Skeleton, Spinner, useToast } from '../ui.jsx'
@@ -200,7 +200,7 @@ export function JobDetail({ id, onClose }) {
           <div className="stack" style={{ '--gap': '12px' }}>
             <Vehicle3D job={j} compact caption={false} />
             <Money m={j.money} done={j.status === 'done'} />
-            {j.photos?.length > 0 && <div className="rec-photos">{j.photos.map((p) => <img key={p.path} src={p.url} alt={`Photo on ${id}`} />)}</div>}
+            {j.photos?.length > 0 && <div className="rec-photos">{j.photos.map((p) => <img key={p.path} src={apiUrl(p.url)} alt={`Photo on ${id}`} />)}</div>}
           </div>
           <div className="stack" style={{ '--gap': '14px' }}>
             <div>

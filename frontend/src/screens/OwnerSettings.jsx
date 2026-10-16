@@ -60,6 +60,7 @@ export default function OwnerSettings({ onSaved }) {
   }
 
   return (
+    <>
     <form className="card settings enter" onSubmit={save} aria-label="Garage settings">
       <div className="row between wrap" style={{ marginBottom: 6 }}>
         <h2>Settings</h2>
@@ -87,5 +88,53 @@ export default function OwnerSettings({ onSaved }) {
         <button className="btn btn-primary" disabled={!dirty || busy}>{busy ? <Spinner /> : 'Save'}</button>
       </div>
     </form>
+    <StorageCheck />
+    </>
+  )
+}
+
+// "Check photo storage" (C21): runs each step photos need on the real bucket and names the fix for the one that fails.
+function StorageCheck() {
+  const [result, setResult] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  async function run() {
+    setBusy(true)
+    setError(null)
+    try {
+      setResult(await api('/api/owner/diagnostics/storage'))
+    } catch (e) {
+      setError(e)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <section className="card settings enter" aria-label="Photo storage check" style={{ marginTop: 16 }}>
+      <div className="row between wrap" style={{ '--gap': '8px' }}>
+        <div className="stack" style={{ '--gap': '2px' }}>
+          <h2>Photo storage</h2>
+          <span className="muted small">If photos don’t show, this finds out why.</span>
+        </div>
+        <button type="button" className="btn" onClick={run} disabled={busy}>{busy ? <Spinner /> : 'Check photo storage'}</button>
+      </div>
+      {error && <ErrorNote error={error} onRetry={run} />}
+      {result && (
+        <ol className="stack" style={{ '--gap': '8px', marginTop: 14, paddingLeft: 0, listStyle: 'none' }}>
+          {result.steps.map((s) => (
+            <li key={s.step} className="stack" style={{ '--gap': '2px' }}>
+              <div className="row" style={{ '--gap': '8px' }}>
+                <span className={`chip ${s.ok ? 'chip-ok' : 'chip-bad'}`}>{s.ok ? 'OK' : 'Failed'}</span>
+                <strong>{s.label}</strong>
+                {s.ok && s.detail !== 'OK' && <span className="muted small">{s.detail}</span>}
+              </div>
+              {!s.ok && <span className="small">{s.hint}</span>}
+              {!s.ok && <span className="muted small mono">{s.detail}</span>}
+            </li>
+          ))}
+          {result.ok && <li className="muted small">Everything photos need works.</li>}
+        </ol>
+      )}
+    </section>
   )
 }

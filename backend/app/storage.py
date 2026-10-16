@@ -15,6 +15,11 @@ def use_fake() -> dict:
     return _fake
 
 
+def is_fake() -> bool:
+    """True in tests and in DB_BACKEND=memory: files live in memory, no bucket needed."""
+    return _fake is not None or config.DB_BACKEND == "memory"
+
+
 def _bucket(name: str = ""):
     from google.cloud import storage
 
@@ -54,14 +59,28 @@ def download(path: str) -> tuple[bytes, str]:
 
 
 def signed_url(path: str, minutes: int = 15) -> str:
+    """A V4 signed GET URL. Raises if signing isn't possible; callers fall back (services/photos.photo_url)."""
     if _fake is not None or config.DB_BACKEND == "memory":
         return f"memory://{path}?expires={minutes}m"
     import google.auth
     from google.auth.transport.requests import Request
+    from google.oauth2 import service_account
 
-    # On Cloud Run there is no private key: sign through IAM with the service account's token.
     creds, _ = google.auth.default()
+    blob = _bucket().blob(path)
+    expiration = timedelta(minutes=minutes)
+    if isinstance(creds, service_account.Credentials):  # a key file (local dev): sign with its private key
+        return blob.generate_signed_url(version="v4", expiration=expiration, method="GET", credentials=creds)
+    # On Cloud Run there is no private key: sign through IAM (needs Service Account Token Creator on itself and
+    # the IAM Credentials API).
     creds.refresh(Request())
-    return _bucket().blob(path).generate_signed_url(
-        version="v4", expiration=timedelta(minutes=minutes), method="GET",
+    return blob.generate_signed_url(
+        version="v4", expiration=expiration, method="GET",
         service_account_email=getattr(creds, "service_account_email", None), access_token=creds.token)
+
+
+def delete(path: str) -> None:
+    if _fake is not None:
+        _fake.pop(path, None)
+        return
+    _bucket().blob(path).delete()

@@ -12,3 +12,6 @@ playwright-report/
 .env.local
 # Manufacturer manuals: copyrighted, never commit (see changes.md C08)
 backend/manuals/pdf/
+
+# Hackathon submission template and decks: kept out of the repo
+*.pptx

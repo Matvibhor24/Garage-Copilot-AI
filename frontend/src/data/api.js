@@ -9,6 +9,12 @@ export class ApiError extends Error {
   }
 }
 
+// A URL from the backend that points at the API itself (e.g. a photo served by /api/photos/…) needs the API base
+// when the frontend isn't on the same origin.
+export function apiUrl(url) {
+  return url && url.startsWith('/api/') ? API_BASE + url : url
+}
+
 export function requestId() {
   return crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now()
 }

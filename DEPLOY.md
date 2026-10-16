@@ -43,7 +43,7 @@ account key file, and the manual PDFs.
 | Image repo | `garage-copilot` (Artifact Registry, asia-south1) | |
 | Runtime service account | `garage-copilot-run@garagecopilot.iam.gserviceaccount.com` | what the backend runs as |
 | Scheduler service account | `garage-copilot-scheduler@garagecopilot.iam.gserviceaccount.com` | |
-| Bucket | `garagecopilot-garage-photos` | photos/ and manuals/; if your bucket has another name, see step 7 |
+| Bucket | `garagecopilot-photos` | photos/ and manuals/; if your bucket has another name, see step 7 |
 | Secret | `link-secret` | signs the customer links |
 | App URL | `https://garagecopilot.web.app` | Firebase Hosting default domain |
 
@@ -80,7 +80,7 @@ export PROJECT=garagecopilot
 export REGION=asia-south1
 export RUN_SA=garage-copilot-run@$PROJECT.iam.gserviceaccount.com
 export SCHED_SA=garage-copilot-scheduler@$PROJECT.iam.gserviceaccount.com
-export BUCKET=garagecopilot-garage-photos
+export BUCKET=garagecopilot-photos
 export PROJECT_NUMBER=$(gcloud projects describe $PROJECT --format='value(projectNumber)')
 echo $PROJECT_NUMBER   # a long number; if empty, step 1 isn't done
 ```
@@ -157,7 +157,7 @@ A photos bucket may already exist from earlier testing. Check its name:
 gcloud storage buckets list --format='value(name,location)'
 ```
 
-- If it's **`garagecopilot-garage-photos`**: nothing to change.
+- If it's **`garagecopilot-photos`**: nothing to change.
 - If it has **another name**: either create the expected one (below), or use yours and add
   `,_GCS_BUCKET=<your-bucket>` to the `--substitutions` in steps 9 and 16.
 
@@ -339,7 +339,7 @@ On 4G, not office Wi-Fi, with a Bluetooth headset:
 | Voice: "Connection lost" immediately | `VITE_WS_BASE` wrong or still `https://` | Must be `wss://<cloud-run-host>`; rebuild + redeploy hosting |
 | Voice connects but Gemini errors in the logs | Vertex AI not enabled / role missing / model not in region | Step 3 + `roles/aiplatform.user` (step 4); `GOOGLE_CLOUD_LOCATION=us-central1` |
 | PIN login or customer live updates fail with a signing error | Token Creator role or IAM Credentials API missing | Step 3 (`iamcredentials`) and step 4 (`serviceAccountTokenCreator`) |
-| Photo upload fails | bucket name or bucket role | Step 7 |
+| Photos don't show or upload fails | bucket name, bucket role, or URL signing | Owner → Settings → **Check photo storage**: it tests each step and names the fix. Bucket name must match `_GCS_BUCKET`; the runtime service account needs Storage Object Admin on the bucket; for signed links also Service Account Token Creator on itself and `iamcredentials.googleapis.com` (until then photos are served through the backend) |
 | Customer links point to localhost | `PUBLIC_BASE_URL` | Defaults to `https://garagecopilot.web.app`; set `_PUBLIC_BASE_URL` if you use another domain |
 | Phone OTP: reCAPTCHA / "domain not authorized" | authorized domains | Step 8.2 |
 | `/api` calls 404 on the Hosting domain | Cloud Run service name/region doesn't match `firebase.json` | Must be `garage-copilot` in `asia-south1` |

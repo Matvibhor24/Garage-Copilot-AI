@@ -69,6 +69,7 @@ const ACTION_LABEL = {
   web_search_fixes: 'searched the web',
   caller_status: 'told a caller their status',
   caller_wait_time: 'told a caller the wait',
+  topic_blocked: 'blocked an off-topic request',
   resend_quote: 'sent a quote again',
   request_estimate: 'asked for a price',
   answer_estimate: 'answered a price request',
@@ -105,6 +106,7 @@ export function actionDetail(entry) {
     case 'answer_estimate': return `${d.estimate_id} · ${d.status}${d.total != null ? ` · ${rupees(d.total)}` : ''}`
     case 'book_dropoff': return `${d.booking_id} · ${d.when}`
     case 'request_callback': return d.callback_id || ''
+    case 'topic_blocked': return d.text ? `“${d.text}” (${d.where})` : d.where || ''
     case 'caller_wait_time': return `${d.vehicles_ahead} ahead · starts in ~${d.start_in_minutes?.[0]}–${d.start_in_minutes?.[1]} min`
     case 'web_search_fixes': return `${d.question} (web${d.sites?.length ? ` · ${d.sites.join(', ')}` : ': nothing found'})`
     case 'update_settings': return d.summary ? d.summary.replace(/^changed /, '') : ''

@@ -8,7 +8,7 @@ substitutions:
   _REPO: garage-copilot          # Artifact Registry docker repo
   _RUNTIME_SA: garage-copilot-run@${PROJECT_ID}.iam.gserviceaccount.com
   _GENAI_LOCATION: us-central1
-  _GCS_BUCKET: ${PROJECT_ID}-garage-photos
+  _GCS_BUCKET: ${PROJECT_ID}-photos          # the team's bucket: garagecopilot-photos
   _PUBLIC_BASE_URL: https://${PROJECT_ID}.web.app
   _SCHEDULER_SA: garage-copilot-scheduler@${PROJECT_ID}.iam.gserviceaccount.com
   _SCHEDULER_AUDIENCE: ""       # https://<service-url>/api/tasks/sweep once the URL is known

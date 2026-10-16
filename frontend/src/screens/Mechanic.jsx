@@ -1,6 +1,7 @@
 // Mechanic: name + PIN on the shared garage phone, then a hands-free voice screen.
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../data/api.js'
+import { shrinkPhoto } from '../photo.js'
 import { session, signInWithPin, signOut } from '../data/auth.js'
 import { useLiveView } from '../data/live.js'
 import { DEMO } from '../config.js'
@@ -186,7 +187,9 @@ function VoiceScreen({ me, onSignOut }) {
     if (!file) return
     if (!currentJob) return toast('Open a job first')
     try {
-      await api(`/api/jobs/${currentJob}/photos`, { method: 'POST', rawBody: file, contentType: file.type || 'image/jpeg' })
+      toast('Sending photo…')
+      const photo = await shrinkPhoto(file) // a small JPEG: HEIC and huge camera files were rejected (C21)
+      await api(`/api/jobs/${currentJob}/photos`, { method: 'POST', rawBody: photo, contentType: photo.type || file.type || 'image/jpeg' })
       setItems((l) => [...l, { id: Math.random(), kind: 'note', text: `Photo added to ${currentJob}`, final: true }])
       toast(`Photo added to ${currentJob}`)
     } catch (e) {

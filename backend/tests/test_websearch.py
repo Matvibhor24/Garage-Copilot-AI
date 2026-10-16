@@ -8,7 +8,7 @@ from google.adk.models.base_llm import BaseLlm
 from google.adk.models.llm_response import LlmResponse
 from google.genai import types
 
-from app import agent, seed, tools
+from app import agent, consent, seed, tools
 from app.services import core, jobs, websearch
 from tests.helpers import mechanic
 
@@ -35,6 +35,12 @@ def ctx(call_id):
     return SimpleNamespace(state=state, function_call_id=call_id)
 
 
+def agree():
+    """The manual had nothing, the agent asked, and the mechanic said "haan" (C19)."""
+    consent.offer("m-raju", "hard to start")
+    consent.heard("m-raju", "haan, search karo")
+
+
 def audit(action):
     return [d.to_dict() for d in core.garage(G).collection("audit_log").stream() if d.to_dict()["action"] == action]
 
@@ -47,6 +53,7 @@ def test_never_searches_without_the_mechanics_yes(garage):
 
 
 def test_confirmed_search_returns_points_and_sites_and_is_audited(garage):
+    agree()
     out = asyncio.run(tools.web_search_fixes("hard to start in the morning", "", True, ctx("w1")))
     assert garage == [("hard to start in the morning", "Splendor Plus")]  # the job's vehicle
     assert out["source"] == "web" and out["sites"] == ["bikeservice.example", "mechanicforum.example"]
@@ -56,11 +63,13 @@ def test_confirmed_search_returns_points_and_sites_and_is_audited(garage):
     assert entry["details"]["sites"] == out["sites"] and entry["by_name"] == "Raju"
     saved = core.garage(G).collection("web_searches").document("w1").get().to_dict()
     assert saved["suggestions_html"] == "<div>chips</div>"  # Google's search suggestions, kept for the UI
+    agree()
     again = asyncio.run(tools.web_search_fixes("hard to start in the morning", "", True, ctx("w1")))
     assert again == out and len(audit("web_search_fixes")) == 1
 
 
 def test_brakes_fuel_and_electrical_end_with_the_workshop_manual(garage):
+    agree()
     out = asyncio.run(tools.web_search_fixes("rear brake squeals", "Splendor Plus", True, ctx("w2")))
     assert out["safety"] == "Check against the workshop manual."
     assert websearch.needs_safety_note("petrol smell near the tank, leak?", [])

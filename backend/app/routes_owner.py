@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel
 
 from app.auth import current_owner, current_user
-from app.services import frontdesk, inventory, jobs, owner, people, reports, settings
+from app.services import frontdesk, inventory, jobs, owner, people, photos, reports, settings
 
 router = APIRouter(prefix="/api")
 
@@ -185,3 +185,9 @@ def drop_estimate(estimate_id: str, body: Action, who=Depends(current_owner)):
 @router.post("/owner/callbacks/{callback_id}/done")
 def callback_done(callback_id: str, body: Action, who=Depends(current_owner)):
     return frontdesk.close_callback(who, who["garage_id"], rid(body.request_id), callback_id)
+
+
+@router.get("/owner/diagnostics/storage")
+def storage_check(who=Depends(current_owner)):
+    """Owner's "Check photo storage" (C21): each step photos need, with the fix for the one that fails."""
+    return photos.storage_check(who, who["garage_id"])

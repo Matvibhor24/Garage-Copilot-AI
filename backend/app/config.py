@@ -20,6 +20,11 @@ TEXT_MODEL = _env("TEXT_MODEL", "gemini-2.5-flash")
 VISION_MODEL = _env("VISION_MODEL", "gemini-2.5-flash")
 # Web search for known fixes (C14): a sub-agent with ADK's google_search (Gemini 2.x or later), default TEXT_MODEL
 WEB_SEARCH_MODEL = _env("WEB_SEARCH_MODEL", TEXT_MODEL)
+# Topic guard (C20): a fast check that each request is about the garage; off-topic replies are cut off in the gateway.
+TOPIC_GUARD = _env("TOPIC_GUARD", "1") == "1"
+TOPIC_MODEL = _env("TOPIC_MODEL", "gemini-2.5-flash-lite")
+TOPIC_TIMEOUT_SECONDS = float(_env("TOPIC_TIMEOUT_SECONDS", "4"))
+TOPIC_STRIKES_TO_END_CALL = int(_env("TOPIC_STRIKES_TO_END_CALL", "2"))  # front-desk callers only
 
 # Agent voice. The Live API has no speaking-rate setting (only a voice name), so pace is an instruction.
 # LIVE_VOICE: a prebuilt voice name (e.g. Kore, Charon, Aoede); empty = the model's default voice.

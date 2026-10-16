@@ -80,3 +80,28 @@ def read_caller_token(token: str) -> dict:
 
 def job_url(garage_id: str, job_id: str) -> str:
     return f"{config.PUBLIC_BASE_URL}/j/{make_token(garage_id, job_id)}"
+
+
+def make_photo_token(garage_id: str, path: str, minutes: int = 60) -> str:
+    """Short-lived token for /api/photos/{token} (C21): "ph." + signed {g, p, exp}. The fallback when Cloud Storage
+    can't sign a URL (no IAM permission), so a photo still shows."""
+    exp = int(time.time()) + 60 * minutes
+    payload = _b64(json.dumps({"g": garage_id, "p": path, "exp": exp}, separators=(",", ":")).encode())
+    return f"ph.{payload}.{_sign(payload)}"
+
+
+def read_photo_token(token: str) -> tuple[str, str]:
+    """(garage_id, path) or raise BadLink."""
+    if not token.startswith("ph."):
+        raise BadLink("not a photo token")
+    try:
+        payload, sig = token[3:].split(".", 1)
+        ok = hmac.compare_digest(sig, _sign(payload))
+        data = json.loads(_unb64(payload))
+    except (ValueError, json.JSONDecodeError) as e:
+        raise BadLink("malformed photo token") from e
+    if not ok:
+        raise BadLink("invalid photo token")
+    if data["exp"] < time.time():
+        raise BadLink("photo link expired")
+    return data["g"], data["p"]

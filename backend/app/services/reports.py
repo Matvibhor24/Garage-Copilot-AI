@@ -10,11 +10,17 @@ import io
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from app import db, storage
+from app import db
 from app.services import core, jobs
 from app.services.core import Forbidden, NotFound, get_doc
 
 PAGE = 50
+
+
+def _photo_url(garage_id: str, path: str) -> str:
+    from app.services import photos
+
+    return photos.photo_url(garage_id, path)
 
 
 def _owner(who: dict, garage_id: str) -> None:
@@ -162,7 +168,7 @@ def job_detail(who, garage_id, job_id) -> dict:
         "quotes": [{k: q.get(k) for k in ("id", "status", "total", "lines", "labour", "note", "by", "at", "sent_at",
                                            "auto", "quote_limit")} for q in quotes],
         "messages": [{k: m.get(k) for k in ("at", "kind", "channel", "to", "text")} for m in messages],
-        "photos": [{"path": p, "url": storage.signed_url(p)} for p in photos],
+        "photos": [{"path": p, "url": _photo_url(garage_id, p)} for p in photos],
     }
 
 

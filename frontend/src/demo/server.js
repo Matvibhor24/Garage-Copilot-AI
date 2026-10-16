@@ -71,6 +71,11 @@ export async function handle(method, fullPath, body = {}, rawBody) {
     store.change((st) => { const cb = st.callbacks.find((c) => c.id === m[1]); if (cb) cb.status = 'done' })
     return { callback_id: m[1], status: 'done' }
   }
+  if (path === '/api/owner/diagnostics/storage') {
+    const steps = [['bucket', 'Bucket name', 'in memory (demo)'], ['write', 'Save a test file'], ['read', 'Read it back'],
+      ['sign', 'Make a signed link'], ['delete', 'Delete the test file']].map(([step, label, detail]) => ({ step, label, ok: true, detail: detail || 'OK' }))
+    return { bucket: 'demo', ok: true, steps }
+  }
   if (path === '/api/owner/settings' && method === 'GET') return { ...store.settings(s), languages: store.LANGUAGES }
   if (path === '/api/owner/settings' && method === 'PUT') return saveSettings(body.changes || {})
   if ((m = path.match(/^\/api\/jobs\/([^/]+)\/photos$/))) {

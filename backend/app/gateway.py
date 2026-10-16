@@ -13,6 +13,7 @@ POST /api/call/start or /api/j/{token}/call) the front desk agent for a customer
                                {"type": "tool", "name", "result"}
                                {"type": "turn_complete"} / {"type": "interrupted"}
                                {"type": "ignored", "reason": "no speech"}   a push-to-talk turn without speech
+                               {"type": "blocked", "reason": "off_topic"}   the topic guard cut an off-topic turn (C20)
 One live connection per mechanic: a newer one (another tab or phone) makes the older one close with code 4409.
 Session state (current job) is loaded from and saved to Firestore, so any instance can serve the next connection.
 """
@@ -25,8 +26,8 @@ import uuid
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from google.genai import types
 
-from app import auth, config, language, links, speech, tools
-from app.services import frontdesk, voice
+from app import auth, config, consent, language, links, speech, tools, topic
+from app.services import core, frontdesk, voice
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -102,7 +103,73 @@ def send_turn(queue, pcm: bytes) -> None:
     queue.send_activity_end()
 
 
-async def upstream(ws: WebSocket, queue, push_to_talk: bool = False) -> None:
+class Guard:
+    """Topic guard for one connection (C20): the layer that enforces "garage work only" from outside the model.
+    A finished user utterance (and once per turn the agent's own words, if they run long) is checked alongside the
+    reply. Off-topic → the rest of this turn's agent audio and words are dropped, the phone is told to stop playing,
+    and the agent is asked to say one line instead. A caller who keeps at it has the call ended."""
+
+    REPLY_WORDS_TO_CHECK = 18  # garage replies are a sentence; a long answer gets checked once
+    GOODBYE_SECONDS = 4  # a caller's goodbye plays before the call closes
+
+    def __init__(self, ws: WebSocket, queue, who: dict):
+        self.ws, self.queue, self.who = ws, queue, who
+        self.blocking = False  # dropping the rest of the current turn
+        self.in_turn = False  # the agent is mid-reply
+        self.awaiting_reply = False  # a request was heard and its reply hasn't finished yet
+        self.checked_reply = False
+        self.strikes = 0
+        self.ending = False  # a caller's call ends after this turn
+        self.tasks = set()
+
+    def check(self, text: str, source: str) -> None:
+        """Check in the background; normal turns never wait for it."""
+        if not config.TOPIC_GUARD or not topic.worth_checking(text):
+            return
+        task = asyncio.create_task(self._check(text, source))
+        self.tasks.add(task)
+        task.add_done_callback(self.tasks.discard)
+
+    def reply_grew(self, said_so_far: str) -> None:
+        if not self.checked_reply and len(said_so_far.split()) >= self.REPLY_WORDS_TO_CHECK:
+            self.checked_reply = True
+            self.check(said_so_far, "agent reply")
+
+    async def _check(self, text: str, source: str) -> None:
+        if await topic.on_topic(text, self.who["role"]) is False and not self.blocking:
+            await self.block(text, source)
+
+    async def block(self, text: str, source: str, typed: bool = False) -> None:
+        self.strikes += 1
+        # Drop the reply to this request, whether it has started yet or not; a reply that already finished has
+        # nothing left to drop (then only the refusal follows).
+        self.blocking = (self.in_turn or self.awaiting_reply) and not typed
+        log.warning("off-topic %s blocked for %s/%s: %r", source, self.who["garage_id"], self.who["uid"], text[:120])
+        await self.ws.send_json({"type": "blocked", "reason": "off_topic", "typed": typed})
+        await asyncio.to_thread(self._record, text, source)
+        if typed:
+            return  # never reached Gemini: nothing to take back
+        self.ending = self.who["role"] == "caller" and self.strikes >= config.TOPIC_STRIKES_TO_END_CALL
+        note = topic.END_CALL_NOTE if self.ending else topic.REFUSAL_NOTE
+        self.queue.send_content(types.Content(role="user", parts=[types.Part(text=note)]))
+
+    def _record(self, text: str, source: str) -> None:
+        try:
+            core.audit(self.who["garage_id"], self.who, "topic_blocked", {"where": source, "text": text[:200]})
+            if self.who["role"] == "caller":
+                frontdesk.note_action(self.who, self.who["garage_id"], "Off-topic request blocked")
+        except Exception:
+            log.exception("could not record a blocked off-topic request")
+
+    def heard(self, text: str) -> None:
+        self.awaiting_reply = True
+        self.check(text, "request")
+
+    def turn_over(self) -> None:
+        self.blocking = self.in_turn = self.checked_reply = self.awaiting_reply = False
+
+
+async def upstream(ws: WebSocket, queue, push_to_talk: bool = False, guard: Guard | None = None) -> None:
     # Push-to-talk: the held turn is kept here and sent to Gemini on release only if it contains speech.
     # Gemini answers every activity start/end pair, even a silent one, and could guess an action from the
     # job in context; a tap, silence or noise must never become a command. (In this mode Gemini only answers
@@ -120,6 +187,12 @@ async def upstream(ws: WebSocket, queue, push_to_talk: bool = False) -> None:
         elif msg.get("text"):
             data = json.loads(msg["text"])
             if data.get("type") == "text":
+                # Typed text is checked BEFORE it reaches Gemini: an off-topic request is never sent (C20)
+                if guard and await topic.on_topic(data["text"], guard.who["role"]) is False:
+                    await guard.block(data["text"], "typed", typed=True)
+                    continue
+                if guard:
+                    consent.heard(guard.who["uid"], data["text"])
                 queue.send_content(types.Content(role="user", parts=[types.Part(text=data["text"])]))
             elif data.get("type") == "start":
                 if push_to_talk:
@@ -160,15 +233,18 @@ def check_language(queue, state: dict, heard: str, said: str) -> bool:
     return True
 
 
-async def downstream(ws: WebSocket, events, who: dict, state: dict, queue=None) -> None:
+async def downstream(ws: WebSocket, events, who: dict, state: dict, queue=None, guard: Guard | None = None) -> None:
     streamed = False  # audio already sent in this turn
     heard, said = [], []  # this turn's final transcriptions, for the language check
+    guard = guard or Guard(ws, queue, who)
     async for event in events:
         # Each audio chunk is sent once. Streamed chunks come in events that are not marked partial=False;
         # an event explicitly marked partial=False is an aggregate of the turn, so its audio is skipped
         # when the turn already streamed audio (otherwise the mechanic hears the reply twice).
         audio = audio_parts(event)
-        if audio and not (event.partial is False and streamed):
+        if audio:
+            guard.in_turn = True
+        if audio and not (event.partial is False and streamed) and not guard.blocking:
             for chunk in audio:
                 await ws.send_bytes(chunk)
             streamed = True
@@ -180,8 +256,17 @@ async def downstream(ws: WebSocket, events, who: dict, state: dict, queue=None) 
         speaker = who["role"] if who["role"] in ("owner", "caller") else "mechanic"
         for role, tr in ((speaker, event.input_transcription), ("agent", event.output_transcription)):
             if tr and tr.text:
+                if role == "agent":
+                    guard.in_turn = True
+                    if guard.blocking:
+                        continue  # the off-topic answer being cut off: don't show it either
                 await ws.send_json({"type": "transcript", "role": role, "text": tr.text, "final": bool(tr.finished)})
                 (said if role == "agent" else heard).append(tr.text)
+                if role != "agent" and tr.finished:
+                    guard.heard(tr.text)
+                    consent.heard(who["uid"], tr.text)  # a "yes" to the web-search offer must be the mechanic's own (C19)
+                elif role == "agent":
+                    guard.reply_grew(" ".join(said))
                 if role == "caller" and tr.finished:  # the caller's words become the call's summary for the owner
                     await asyncio.to_thread(frontdesk.note_heard, who["garage_id"], who["call_id"], tr.text)
         delta = getattr(event.actions, "state_delta", None) or {}
@@ -196,6 +281,11 @@ async def downstream(ws: WebSocket, events, who: dict, state: dict, queue=None) 
             heard, said = [], []
         if event.interrupted or event.turn_complete:
             streamed = False
+            guard.turn_over()
+        if event.turn_complete and guard.ending:
+            await asyncio.sleep(guard.GOODBYE_SECONDS)  # let the goodbye play
+            await ws.close(code=1000, reason="Call ended: only garage questions on this line")
+            return
 
 
 async def notices(queue, who: dict, conn: str) -> None:
@@ -236,9 +326,10 @@ async def voice_ws(ws: WebSocket, token: str = "", ptt: int = 0, lang: str = "")
         state.update(phone=who["phone"], verified=who["verified"], call_id=who["call_id"], call_job=who["job_id"],
                      current_job="")
     queue = new_queue()
+    guard = Guard(ws, queue, who)
     tasks = [
-        asyncio.create_task(upstream(ws, queue, bool(ptt))),
-        asyncio.create_task(downstream(ws, live_events(state, queue, bool(ptt)), who, state, queue)),
+        asyncio.create_task(upstream(ws, queue, bool(ptt), guard)),
+        asyncio.create_task(downstream(ws, live_events(state, queue, bool(ptt)), who, state, queue, guard)),
         asyncio.create_task(notices(queue, who, conn)),
     ]
     log.info("voice session %s opened for %s/%s", conn, who["garage_id"], who["uid"])

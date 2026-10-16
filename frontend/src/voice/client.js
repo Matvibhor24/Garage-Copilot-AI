@@ -115,6 +115,12 @@ export function createVoice({ onEvent, handsFree = true, lang = 'auto', getToken
     const msg = JSON.parse(e.data)
     if (msg.type === 'interrupted') stopPlayback()
     if (msg.type === 'tool') onEvent({ type: 'thinking', on: false })
+    if (msg.type === 'blocked') { // C20 topic guard: an off-topic answer was cut off (or typed text never sent)
+      stopPlayback()
+      said.agent = ''
+      onEvent({ type: 'thinking', on: false })
+      return onEvent({ type: 'blocked', typed: !!msg.typed })
+    }
     if (msg.type === 'ignored') { // push-to-talk turn with no speech: nothing was sent to the agent
       onEvent({ type: 'thinking', on: false })
       return onEvent({ type: 'note', text: "Didn't catch that. Hold the button and speak." })

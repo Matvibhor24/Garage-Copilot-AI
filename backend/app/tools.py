@@ -8,7 +8,7 @@ Errors come back as {"error": ...} so the agent can say what went wrong.
 
 import uuid
 
-from app import gemini
+from app import consent, gemini
 from app.services import core, inventory, jobs, manuals, owner, photos, quotes, settings
 
 CURRENT_JOB = "current_job"
@@ -164,6 +164,8 @@ def lookup_manual(question: str, vehicle: str, tool_context) -> dict:
                 raise core.Invalid("which vehicle? say the model")
             model = jobs.get_job(who, g, current)["vehicle"]
         out = manuals.lookup(who, g, _request_id(tool_context), question, model)
+        if not out["found"] and who["role"] == "mechanic":
+            consent.offer(who["uid"], question)  # the agent now asks "Shall I search online?" (C19)
         return {"found": out["found"], "vehicle": out["vehicle"],
                 "source": manuals.source_label(out["sources"][0]) if out["sources"] else "",
                 "answer_sources": [{"title": h["title"], "page": h["page"], "section": h["section"], "text": h["text"]}
@@ -188,6 +190,11 @@ async def web_search_fixes(question: str, vehicle: str, confirmed: bool, tool_co
 
     if confirmed is not True:
         return {"error": 'not searched: ask the mechanic "Shall I search online for known causes and fixes?" first'}
+    # The model saying "confirmed" isn't enough: the manual must have come up empty and the mechanic's own next
+    # words must be a yes (C19).
+    if not consent.allowed(tool_context.state.get("uid", "")):
+        return {"error": 'not searched: the mechanic hasn\'t said yes yet. Look it up in the manual first; if it isn\'t '
+                         'there, ask "Shall I search online for known causes and fixes?" and wait for their answer'}
     try:
         who, g = _who(tool_context)
         model = vehicle.strip()
@@ -197,6 +204,7 @@ async def web_search_fixes(question: str, vehicle: str, confirmed: bool, tool_co
                 raise core.Invalid("which vehicle? say the model")
             model = (await asyncio.to_thread(jobs.get_job, who, g, current))["vehicle"]
         found = await websearch.search(question, model)
+        consent.clear(who["uid"])  # one yes, one search
         return await asyncio.to_thread(websearch.record, who, g, _request_id(tool_context), question, model, found)
     except (core.Invalid, core.NotFound, core.Forbidden) as e:
         return {"error": str(e)}

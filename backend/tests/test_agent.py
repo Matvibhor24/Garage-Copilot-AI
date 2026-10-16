@@ -56,3 +56,19 @@ def test_owner_agent_only_has_owner_tools(monkeypatch):
     assert {getattr(t, "__name__", "") for t in mechanic.tools} & names == {"lookup_manual"}
     text = agent.owner_instruction(SimpleNamespace(state={"garage_name": "Shree Auto", "name": "Asha"}))
     assert "Asha" in text and "Never guess" in text
+
+
+def test_every_agent_stays_on_topic():
+    """C20: a garage assistant, not a general chatbot (it once tutored a teammate on an unrelated subject)."""
+    from types import SimpleNamespace
+
+    from app import agent
+
+    ctx = SimpleNamespace(state={"garage_name": "Shree Auto", "name": "Raju", "role": "mechanic", "pinned_lang": ""})
+    for build in (agent.instruction, agent.owner_instruction, agent.front_desk_instruction):
+        text = build(ctx)
+        assert "Stay on topic (strict)" in text and "Never answer the off-topic part" in text
+        assert text.index("Stay on topic") < text.index("How to talk") if "How to talk" in text else True
+    for sub in (agent.build_quote_agent(), agent.build_comms_agent(), agent.build_inventory_agent()):
+        assert "Only do this garage task" in sub.instruction
+    assert "Only search for vehicle repair" in agent.WEB_SEARCH_INSTRUCTION
