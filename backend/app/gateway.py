@@ -21,6 +21,7 @@ Session state (current job) is loaded from and saved to Firestore, so any instan
 import asyncio
 import json
 import logging
+import time
 import uuid
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
@@ -108,10 +109,12 @@ class Guard:
     A finished user utterance (and once per turn the agent's own words, if they run long) is checked alongside the
     reply. Off-topic → the rest of this turn's agent audio and words are dropped, the phone is told to stop playing,
     and the agent is asked to say one line instead. A caller who keeps at it has the call ended.
-    One request counts one strike at most, however many of its checks (request, long reply) come back off-topic."""
+    One exchange (a request and the reply to it) costs one strike at most, however many of its checks come back
+    off-topic. Typed text is checked before it is sent on, in the background so the mic keeps streaming."""
 
     REPLY_WORDS_TO_CHECK = 18  # garage replies are a sentence; a long answer gets checked once
     GOODBYE_SECONDS = 4  # a caller's goodbye plays before the call closes
+    LATE_HEARD_SECONDS = 2  # a request's words this soon after its reply ended are late, not a new request
 
     def __init__(self, ws: WebSocket, queue, who: dict):
         self.ws, self.queue, self.who = ws, queue, who
@@ -120,8 +123,10 @@ class Guard:
         self.awaiting_reply = False  # a request was heard and its reply hasn't finished yet
         self.checked_reply = False
         self.strikes = 0
-        self.request = 0  # counts the user's requests; each check belongs to one
-        self.struck = -1  # the last request that cost a strike
+        self.exchange = 0  # counts agent turns; each check belongs to the exchange it was about
+        self.heard_now = False  # the request of this exchange has been heard
+        self.unheard = None  # (exchange, ended at): a reply that finished before its request's words came in
+        self.struck = -1  # the last exchange that cost a strike
         self.ending = False  # a caller's call ends once the goodbye has played
         self.goodbye_heard = False  # agent output went out after the goodbye was asked for
         self.tasks = set()
@@ -130,18 +135,41 @@ class Guard:
         """Check in the background; normal turns never wait for it."""
         if not config.TOPIC_GUARD or not topic.worth_checking(text):
             return
-        task = asyncio.create_task(self._check(text, source, self.request))
+        self._start(self._check(text, source, self.exchange_of(source)))
+
+    def _start(self, work) -> None:
+        task = asyncio.create_task(work)
         self.tasks.add(task)
         task.add_done_callback(self.tasks.discard)
+
+    def exchange_of(self, source: str) -> int:
+        """A request heard just after its reply ended (Live can send the words late) belongs to that reply's
+        exchange, not the next one. Later than that, it's a new request (e.g. after a refusal or a notice)."""
+        if source == "request" and not self.in_turn and self.unheard is not None:
+            exchange, ended = self.unheard
+            if time.monotonic() - ended <= self.LATE_HEARD_SECONDS:
+                return exchange
+        return self.exchange
+
+    def typed(self, text: str) -> None:
+        """Typed text reaches Gemini only once it passed the check (C20); the receive loop doesn't wait for it."""
+        self._start(self._typed(text))
+
+    async def _typed(self, text: str) -> None:
+        if await topic.on_topic(text, self.who["role"]) is False:
+            await self.block(text, "typed", typed=True)
+            return
+        consent.heard(self.who["uid"], text)
+        self.queue.send_content(types.Content(role="user", parts=[types.Part(text=text)]))
 
     def reply_grew(self, said_so_far: str) -> None:
         if not self.checked_reply and len(said_so_far.split()) >= self.REPLY_WORDS_TO_CHECK:
             self.checked_reply = True
             self.check(said_so_far, "agent reply")
 
-    async def _check(self, text: str, source: str, request: int) -> None:
-        if await topic.on_topic(text, self.who["role"]) is False and request != self.struck:
-            self.struck = request
+    async def _check(self, text: str, source: str, exchange: int) -> None:
+        if await topic.on_topic(text, self.who["role"]) is False and exchange != self.struck:
+            self.struck = exchange
             await self.block(text, source)
 
     async def block(self, text: str, source: str, typed: bool = False) -> None:
@@ -150,16 +178,16 @@ class Guard:
         # nothing left to drop (then only the refusal follows).
         self.blocking = (self.in_turn or self.awaiting_reply) and not typed
         log.warning("off-topic %s blocked for %s/%s: %r", source, self.who["garage_id"], self.who["uid"], text[:120])
-        await asyncio.to_thread(self._record, text, source)  # first, so the owner's records have it even if the
-        try:                                                 # caller already hung up
+        try:
             await self.ws.send_json({"type": "blocked", "reason": "off_topic", "typed": typed})
+            open_ = True
         except Exception:
-            return  # the socket is closed: nobody left to refuse
-        if typed:
-            return  # never reached Gemini: nothing to take back
-        self.ending = self.who["role"] == "caller" and self.strikes >= config.TOPIC_STRIKES_TO_END_CALL
-        note = topic.END_CALL_NOTE if self.ending else topic.REFUSAL_NOTE
-        self.queue.send_content(types.Content(role="user", parts=[types.Part(text=note)]))
+            open_ = False  # the caller already hung up: nobody left to refuse, but the owner's records still get it
+        if open_ and not typed:  # typed text never reached Gemini: nothing to take back
+            self.ending = self.who["role"] == "caller" and self.strikes >= config.TOPIC_STRIKES_TO_END_CALL
+            note = topic.END_CALL_NOTE if self.ending else topic.REFUSAL_NOTE
+            self.queue.send_content(types.Content(role="user", parts=[types.Part(text=note)]))
+        await asyncio.to_thread(self._record, text, source)  # after the refusal, so it isn't delayed
 
     def _record(self, text: str, source: str) -> None:
         try:
@@ -170,9 +198,11 @@ class Guard:
             log.exception("could not record a blocked off-topic request")
 
     def heard(self, text: str) -> None:
-        self.request += 1
-        self.awaiting_reply = True
         self.check(text, "request")
+        if self.exchange_of("request") == self.exchange:
+            self.heard_now = True
+            self.awaiting_reply = True
+        self.unheard = None
 
     def spoke(self) -> None:
         """Agent audio or words went out to the phone."""
@@ -185,7 +215,9 @@ class Guard:
         return self.ending and self.goodbye_heard
 
     def turn_over(self) -> None:
-        self.blocking = self.in_turn = self.checked_reply = self.awaiting_reply = False
+        self.unheard = (self.exchange, time.monotonic()) if self.in_turn and not self.heard_now else None
+        self.exchange += 1
+        self.blocking = self.in_turn = self.checked_reply = self.awaiting_reply = self.heard_now = False
 
 
 async def upstream(ws: WebSocket, queue, push_to_talk: bool = False, guard: Guard | None = None) -> None:
@@ -208,13 +240,9 @@ async def upstream(ws: WebSocket, queue, push_to_talk: bool = False, guard: Guar
             if data.get("type") == "text":
                 # Typed text is checked BEFORE it reaches Gemini: an off-topic request is never sent (C20)
                 if guard:
-                    guard.request += 1
-                    if await topic.on_topic(data["text"], guard.who["role"]) is False:
-                        guard.struck = guard.request
-                        await guard.block(data["text"], "typed", typed=True)
-                        continue
-                    consent.heard(guard.who["uid"], data["text"])
-                queue.send_content(types.Content(role="user", parts=[types.Part(text=data["text"])]))
+                    guard.typed(data["text"])
+                else:
+                    queue.send_content(types.Content(role="user", parts=[types.Part(text=data["text"])]))
             elif data.get("type") == "start":
                 if push_to_talk:
                     turn = bytearray()
@@ -290,6 +318,8 @@ async def downstream(ws: WebSocket, events, who: dict, state: dict, queue=None, 
                     consent.heard(who["uid"], tr.text)  # a "yes" to the web-search offer must be the mechanic's own (C19)
                 elif role == "agent":
                     guard.reply_grew(" ".join(said))
+                    if who["role"] == "mechanic":
+                        consent.agent_said(who["uid"], " ".join(said))  # "Shall I search online?" is the offer
                 if role == "caller" and tr.finished:  # the caller's words become the call's summary for the owner
                     await asyncio.to_thread(frontdesk.note_heard, who["garage_id"], who["call_id"], tr.text)
         delta = getattr(event.actions, "state_delta", None) or {}

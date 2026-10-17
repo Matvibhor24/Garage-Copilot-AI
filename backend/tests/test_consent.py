@@ -14,13 +14,15 @@ G = "shree-auto"
 
 @pytest.mark.parametrize("words", ["yes", "Haan kar do", "ok search it", "ho, chalel", "हाँ कर दो", "theek hai", "sure",
                                    "yes, no problem", "ok no worries", "haan, koi dikkat nahi", "हाँ, कोई बात नहीं",
-                                   "हो, काही हरकत नाही", "मतलब हाँ, देख लो"])
+                                   "हो, काही हरकत नाही", "मतलब हाँ, देख लो", "no problem, ha"])
 def test_yes_in_three_languages(words):
     assert consent.agrees(words)
 
 
 @pytest.mark.parametrize("words", ["no", "nahi rehne do", "nako", "नहीं", "yes... actually no, don't", "", "what is the gap?",
-                                   "मत करो", "kya ho raha hai", "pehle plug check kar"])
+                                   "मत करो", "kya ho raha hai", "pehle plug check kar", "don't do it",
+                                   "ok, don't search", "haan... wait, don't", "ok, don’t",
+                                   "No. Problem is the manual is wrong, search it", "दिक्कत। नहीं"])
 def test_no_or_not_an_answer(words):
     assert not consent.agrees(words)
 
@@ -65,7 +67,8 @@ def test_the_model_claiming_consent_is_not_enough(garage):
 
 
 def test_manual_miss_then_the_mechanics_yes_then_one_search(garage):
-    assert tools.lookup_manual("hard to start in the morning", "", ctx("m1"))["found"] is False  # records the offer
+    assert tools.lookup_manual("hard to start in the morning", "", ctx("m1"))["found"] is False
+    consent.agent_said("m-raju", "It isn't in the manual. Shall I search online for known causes and fixes?")
     consent.heard("m-raju", "nahi")
     assert "hasn't said yes" in asyncio.run(tools.web_search_fixes("hard to start", "", True, ctx("w2")))["error"]
     consent.heard("m-raju", "haan search karo")
@@ -80,6 +83,28 @@ def test_a_manual_passage_that_doesnt_answer_still_lets_the_mechanic_say_yes(gar
     hit = {"title": "Splendor Plus owner's manual", "page": 12, "section": "Starting", "text": "Turn the key to ON."}
     monkeypatch.setattr(manuals, "lookup", lambda who, g, rid, q, model: {"found": True, "vehicle": model, "sources": [hit]})
     assert tools.lookup_manual("hard to start in the morning", "", ctx("m1"))["found"] is True
+    consent.agent_said("m-raju", "मैनुअल में नहीं है। ऑनलाइन देखूँ?")
     consent.heard("m-raju", "haan, koi problem nahi, search karo")
     out = asyncio.run(tools.web_search_fixes("hard to start", "", True, ctx("w1")))
     assert out["source"] == "web" and garage == ["hard to start"]
+
+
+def test_a_yes_to_some_other_question_after_a_lookup_is_not_consent(garage):
+    """The manual answered; the agent asked something else. No search offer was made, so "haan" unlocks nothing."""
+    tools.lookup_manual("clutch lever free play", "", ctx("m1"))
+    consent.agent_said("m-raju", "10 to 20 mm, Splendor Plus manual page 42. Shall I log the part?")
+    consent.heard("m-raju", "haan")
+    assert "hasn't said yes" in asyncio.run(tools.web_search_fixes("free play", "", True, ctx("w1")))["error"]
+
+
+def test_the_offer_is_made_once_per_lookup():
+    """'Searching online now...' after the yes must not move the offer past the yes."""
+    consent.looked_up("m-raju", "hard start", now=100)
+    consent.agent_said("m-raju", "Shall I search online?", now=101)
+    consent.heard("m-raju", "haan", now=103)
+    consent.agent_said("m-raju", "Okay, searching online now", now=104)
+    assert consent.allowed("m-raju", now=105)
+    consent.agent_said("m-raju", "Shall I search online?", now=100 + consent.OFFER_SECONDS + 1)  # lookup too old
+    consent.clear("m-raju")
+    consent.agent_said("m-raju", "Shall I search online?", now=110)  # no lookup since the search: no offer
+    assert not consent.allowed("m-raju", now=111)

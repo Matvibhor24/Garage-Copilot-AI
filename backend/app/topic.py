@@ -48,7 +48,7 @@ Reply with JSON only: {{"on_topic": true}} or {{"on_topic": false}}"""
 WORDS = re.compile(r"\w+", re.UNICODE)
 
 _pool = ThreadPoolExecutor(max_workers=config.TOPIC_WORKERS, thread_name_prefix="topic")
-_slots = threading.BoundedSemaphore(config.TOPIC_WORKERS)  # freed when a check's thread is done, not when we stop waiting
+_slots = threading.BoundedSemaphore(config.TOPIC_WORKERS)  # freed when a check is done or cancelled, not when we stop waiting
 
 
 def worth_checking(text: str) -> bool:
@@ -80,22 +80,16 @@ async def on_topic(text: str, role: str) -> bool | None:
         log.warning("too many topic checks running; letting the turn through")
         return None
     try:
-        work = asyncio.get_running_loop().run_in_executor(_pool, _ask_in_slot, text, role)
+        work = _pool.submit(_ask, text, role)
     except Exception:
         _slots.release()
         raise
+    work.add_done_callback(lambda _: _slots.release())  # also runs if it's cancelled before a thread picks it up
     try:
-        return await asyncio.wait_for(work, timeout=config.TOPIC_TIMEOUT_SECONDS)
+        return await asyncio.wait_for(asyncio.wrap_future(work), timeout=config.TOPIC_TIMEOUT_SECONDS)
     except Exception:
         log.warning("topic check failed; letting the turn through", exc_info=True)
         return None
-
-
-def _ask_in_slot(text: str, role: str) -> bool | None:
-    try:
-        return _ask(text, role)
-    finally:
-        _slots.release()
 
 
 REFUSAL_NOTE = ("[system] The user's last request is not about this garage's work, so it was blocked and they "

@@ -343,3 +343,126 @@ def test_checks_are_bounded_and_have_a_request_timeout(monkeypatch):
     seen.clear()
     assert asyncio.run(real.on_topic("explain photosynthesis to me", "mechanic")) is None  # fails open, no call
     assert seen == {}
+
+
+def test_a_late_request_transcription_is_still_the_same_exchange(fake_db, monkeypatch):
+    """Live sends the caller's words after the reply: the reply check and the request check are one strike."""
+    seed.seed(fake_db)
+    monkeypatch.setattr(config, "TOPIC_GUARD", True)
+    monkeypatch.setattr(topic, "on_topic", judge)
+    monkeypatch.setattr(frontdesk, "note_heard", lambda *a: None)
+
+    async def script(guard):
+        yield said_ev(LONG_OFF_TOPIC)  # the reply runs long before the request's words arrive
+        await until(lambda: guard.strikes == 1)
+        yield Event(author="a", turn_complete=True)
+        yield heard_ev("tell me about photosynthesis please")  # late
+        await until(lambda: not guard.tasks)
+        yield Event(author="a", output_transcription=types.Transcription(text="Only garage questions.", finished=True))
+        yield Event(author="a", turn_complete=True)
+
+    _, queue, guard = run_downstream(script, frontdesk.caller(G, "+919800000101", True, "call-1", ""))
+    assert guard.strikes == 1 and queue.notes == [topic.REFUSAL_NOTE]
+
+
+def test_a_new_request_after_a_refusal_is_a_new_exchange(fake_db, monkeypatch):
+    seed.seed(fake_db)
+    monkeypatch.setattr(config, "TOPIC_GUARD", True)
+    monkeypatch.setattr(topic, "on_topic", judge)
+    monkeypatch.setattr(gateway.Guard, "LATE_HEARD_SECONDS", 0)  # the second question comes well after the refusal
+
+    async def script(guard):
+        yield heard_ev("explain photosynthesis to me")
+        await until(lambda: guard.strikes == 1)
+        yield Event(author="a", turn_complete=True)  # the (dropped) reply
+        yield Event(author="a", output_transcription=types.Transcription(text="I only help with garage work.", finished=True))
+        yield Event(author="a", turn_complete=True)  # the refusal: a turn with no request of its own
+        await asyncio.sleep(0.01)
+        yield heard_ev("now write my essay on photosynthesis")
+        await until(lambda: guard.strikes == 2)
+        yield audio_ev(b"ESSAY")  # the reply to the new off-topic request: dropped
+        yield Event(author="a", turn_complete=True)
+
+    ws, queue, guard = run_downstream(script, {"garage_id": G, "uid": "m-raju", "role": "mechanic", "name": "Raju"})
+    assert guard.strikes == 2 and ("audio", b"ESSAY") not in ws.sent
+
+
+def test_the_refusal_is_not_held_up_by_the_audit_write(fake_db, monkeypatch):
+    seed.seed(fake_db)
+    queue = FakeQueue()
+    guard = gateway.Guard(FakeWs(), queue, {"garage_id": G, "uid": "m-raju", "role": "mechanic", "name": "Raju"})
+    order = []
+    monkeypatch.setattr(guard, "_record", lambda text, source: order.append(("audit", list(queue.notes))))
+    asyncio.run(guard.block("explain photosynthesis to me", "request"))
+    assert guard.ws.sent[0][1]["type"] == "blocked"
+    assert order == [("audit", [topic.REFUSAL_NOTE])]  # phone told and refusal asked for before the audit
+
+
+def test_typed_text_check_does_not_hold_up_the_mic(monkeypatch):
+    monkeypatch.setattr(config, "TOPIC_GUARD", True)
+    sent = []
+
+    class Mic:
+        def __init__(self):
+            self.msgs = [{"type": "websocket.receive", "text": json.dumps({"type": "text", "text": "how many clutch plates left"})},
+                         {"type": "websocket.receive", "bytes": b"MIC"}]
+
+        async def receive(self):
+            if self.msgs:
+                return self.msgs.pop(0)
+            await until(lambda: len(sent) == 2)
+            return {"type": "websocket.disconnect"}
+
+    class Queue:
+        def send_realtime(self, blob):
+            sent.append("mic")
+
+        def send_content(self, content, partial=False):
+            sent.append("typed")
+
+    async def slow_judge(text, role):
+        await until(lambda: "mic" in sent)  # the check is still running when the mic audio arrives
+        return True
+    monkeypatch.setattr(topic, "on_topic", slow_judge)
+    ws, queue = Mic(), Queue()
+    guard = gateway.Guard(ws, queue, {"garage_id": G, "uid": "m-raju", "role": "mechanic", "name": "Raju"})
+    asyncio.run(gateway.upstream(ws, queue, False, guard))
+    assert sent == ["mic", "typed"]
+
+
+def test_a_check_cancelled_before_it_starts_gives_its_slot_back(monkeypatch):
+    import importlib
+    import threading
+
+    real = importlib.reload(topic)
+    monkeypatch.setattr(config, "TOPIC_GUARD", True)
+    monkeypatch.setattr(config, "TOPIC_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(real, "_slots", threading.BoundedSemaphore(2))
+    busy = threading.Event()
+    monkeypatch.setattr(real, "_pool", __import__("concurrent.futures").futures.ThreadPoolExecutor(max_workers=1))
+    monkeypatch.setattr(real, "_ask", lambda text, role: busy.wait(1) or True)
+
+    async def two():  # the second check queues behind the first and times out before a thread picks it up
+        return await asyncio.gather(real.on_topic("explain photosynthesis to me", "mechanic"),
+                                    real.on_topic("explain photosynthesis to me", "mechanic"))
+    assert asyncio.run(two()) == [None, None]
+    busy.set()  # the first check's thread finishes; the second never started
+    assert real._slots.acquire(timeout=1) and real._slots.acquire(timeout=1), "a slot leaked"
+
+
+def test_the_agents_own_search_question_is_the_offer(fake_db, monkeypatch):
+    """C19: the offer comes from what the agent says after a manual lookup, and the mechanic's yes follows it."""
+    from app import consent
+
+    seed.seed(fake_db)
+    consent.looked_up("m-raju", "hard to start")
+
+    async def script(guard):
+        yield heard_ev("haan")  # a yes before any offer counts for nothing
+        yield said_ev("It isn't in the manual. Shall I search online for known causes and fixes?")
+        yield Event(author="a", turn_complete=True)
+        assert not consent.allowed("m-raju")
+        yield heard_ev("haan, search karo")
+
+    run_downstream(script, {"garage_id": G, "uid": "m-raju", "role": "mechanic", "name": "Raju"})
+    assert consent.allowed("m-raju")

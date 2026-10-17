@@ -165,9 +165,9 @@ def lookup_manual(question: str, vehicle: str, tool_context) -> dict:
             model = jobs.get_job(who, g, current)["vehicle"]
         out = manuals.lookup(who, g, _request_id(tool_context), question, model)
         if who["role"] == "mechanic":
-            # The agent may now ask "Shall I search online?": when nothing was found, or when the passages found
-            # don't answer the question (C19)
-            consent.offer(who["uid"], question)
+            # The agent may now ask "Shall I search online?" (nothing found, or the passages don't answer); the
+            # gateway turns that question into the offer (C19)
+            consent.looked_up(who["uid"], question)
         return {"found": out["found"], "vehicle": out["vehicle"],
                 "source": manuals.source_label(out["sources"][0]) if out["sources"] else "",
                 "answer_sources": [{"title": h["title"], "page": h["page"], "section": h["section"], "text": h["text"]}
