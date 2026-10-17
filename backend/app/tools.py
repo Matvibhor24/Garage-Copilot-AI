@@ -164,8 +164,10 @@ def lookup_manual(question: str, vehicle: str, tool_context) -> dict:
                 raise core.Invalid("which vehicle? say the model")
             model = jobs.get_job(who, g, current)["vehicle"]
         out = manuals.lookup(who, g, _request_id(tool_context), question, model)
-        if not out["found"] and who["role"] == "mechanic":
-            consent.offer(who["uid"], question)  # the agent now asks "Shall I search online?" (C19)
+        if who["role"] == "mechanic":
+            # The agent may now ask "Shall I search online?": when nothing was found, or when the passages found
+            # don't answer the question (C19)
+            consent.offer(who["uid"], question)
         return {"found": out["found"], "vehicle": out["vehicle"],
                 "source": manuals.source_label(out["sources"][0]) if out["sources"] else "",
                 "answer_sources": [{"title": h["title"], "page": h["page"], "section": h["section"], "text": h["text"]}
@@ -175,7 +177,7 @@ def lookup_manual(question: str, vehicle: str, tool_context) -> dict:
 
 
 async def web_search_fixes(question: str, vehicle: str, confirmed: bool, tool_context) -> dict:
-    """Search the web for common causes and known fixes of a problem, ONLY after lookup_manual found nothing and
+    """Search the web for common causes and known fixes of a problem, ONLY after lookup_manual didn't answer it and
     the mechanic said yes to "Shall I search online?". Returns 2-3 points with the source sites. They are from
     the web, not the manual, and never a diagnosis.
 

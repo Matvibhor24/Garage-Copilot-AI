@@ -107,7 +107,8 @@ class Guard:
     """Topic guard for one connection (C20): the layer that enforces "garage work only" from outside the model.
     A finished user utterance (and once per turn the agent's own words, if they run long) is checked alongside the
     reply. Off-topic → the rest of this turn's agent audio and words are dropped, the phone is told to stop playing,
-    and the agent is asked to say one line instead. A caller who keeps at it has the call ended."""
+    and the agent is asked to say one line instead. A caller who keeps at it has the call ended.
+    One request counts one strike at most, however many of its checks (request, long reply) come back off-topic."""
 
     REPLY_WORDS_TO_CHECK = 18  # garage replies are a sentence; a long answer gets checked once
     GOODBYE_SECONDS = 4  # a caller's goodbye plays before the call closes
@@ -119,14 +120,17 @@ class Guard:
         self.awaiting_reply = False  # a request was heard and its reply hasn't finished yet
         self.checked_reply = False
         self.strikes = 0
-        self.ending = False  # a caller's call ends after this turn
+        self.request = 0  # counts the user's requests; each check belongs to one
+        self.struck = -1  # the last request that cost a strike
+        self.ending = False  # a caller's call ends once the goodbye has played
+        self.goodbye_heard = False  # agent output went out after the goodbye was asked for
         self.tasks = set()
 
     def check(self, text: str, source: str) -> None:
         """Check in the background; normal turns never wait for it."""
         if not config.TOPIC_GUARD or not topic.worth_checking(text):
             return
-        task = asyncio.create_task(self._check(text, source))
+        task = asyncio.create_task(self._check(text, source, self.request))
         self.tasks.add(task)
         task.add_done_callback(self.tasks.discard)
 
@@ -135,8 +139,9 @@ class Guard:
             self.checked_reply = True
             self.check(said_so_far, "agent reply")
 
-    async def _check(self, text: str, source: str) -> None:
-        if await topic.on_topic(text, self.who["role"]) is False and not self.blocking:
+    async def _check(self, text: str, source: str, request: int) -> None:
+        if await topic.on_topic(text, self.who["role"]) is False and request != self.struck:
+            self.struck = request
             await self.block(text, source)
 
     async def block(self, text: str, source: str, typed: bool = False) -> None:
@@ -145,8 +150,11 @@ class Guard:
         # nothing left to drop (then only the refusal follows).
         self.blocking = (self.in_turn or self.awaiting_reply) and not typed
         log.warning("off-topic %s blocked for %s/%s: %r", source, self.who["garage_id"], self.who["uid"], text[:120])
-        await self.ws.send_json({"type": "blocked", "reason": "off_topic", "typed": typed})
-        await asyncio.to_thread(self._record, text, source)
+        await asyncio.to_thread(self._record, text, source)  # first, so the owner's records have it even if the
+        try:                                                 # caller already hung up
+            await self.ws.send_json({"type": "blocked", "reason": "off_topic", "typed": typed})
+        except Exception:
+            return  # the socket is closed: nobody left to refuse
         if typed:
             return  # never reached Gemini: nothing to take back
         self.ending = self.who["role"] == "caller" and self.strikes >= config.TOPIC_STRIKES_TO_END_CALL
@@ -162,8 +170,19 @@ class Guard:
             log.exception("could not record a blocked off-topic request")
 
     def heard(self, text: str) -> None:
+        self.request += 1
         self.awaiting_reply = True
         self.check(text, "request")
+
+    def spoke(self) -> None:
+        """Agent audio or words went out to the phone."""
+        self.in_turn = True
+        if self.ending and not self.blocking:
+            self.goodbye_heard = True
+
+    def hang_up_now(self) -> bool:
+        """After a turn: the caller's call ends once the goodbye turn itself is over, not the blocked one."""
+        return self.ending and self.goodbye_heard
 
     def turn_over(self) -> None:
         self.blocking = self.in_turn = self.checked_reply = self.awaiting_reply = False
@@ -188,10 +207,12 @@ async def upstream(ws: WebSocket, queue, push_to_talk: bool = False, guard: Guar
             data = json.loads(msg["text"])
             if data.get("type") == "text":
                 # Typed text is checked BEFORE it reaches Gemini: an off-topic request is never sent (C20)
-                if guard and await topic.on_topic(data["text"], guard.who["role"]) is False:
-                    await guard.block(data["text"], "typed", typed=True)
-                    continue
                 if guard:
+                    guard.request += 1
+                    if await topic.on_topic(data["text"], guard.who["role"]) is False:
+                        guard.struck = guard.request
+                        await guard.block(data["text"], "typed", typed=True)
+                        continue
                     consent.heard(guard.who["uid"], data["text"])
                 queue.send_content(types.Content(role="user", parts=[types.Part(text=data["text"])]))
             elif data.get("type") == "start":
@@ -248,6 +269,7 @@ async def downstream(ws: WebSocket, events, who: dict, state: dict, queue=None, 
             for chunk in audio:
                 await ws.send_bytes(chunk)
             streamed = True
+            guard.spoke()
         if event.content and event.content.parts:
             for part in event.content.parts:
                 if part.function_response:
@@ -260,6 +282,7 @@ async def downstream(ws: WebSocket, events, who: dict, state: dict, queue=None, 
                     guard.in_turn = True
                     if guard.blocking:
                         continue  # the off-topic answer being cut off: don't show it either
+                    guard.spoke()
                 await ws.send_json({"type": "transcript", "role": role, "text": tr.text, "final": bool(tr.finished)})
                 (said if role == "agent" else heard).append(tr.text)
                 if role != "agent" and tr.finished:
@@ -278,11 +301,12 @@ async def downstream(ws: WebSocket, events, who: dict, state: dict, queue=None, 
         if event.turn_complete:
             await ws.send_json({"type": "turn_complete"})
             check_language(queue, state, " ".join(heard), " ".join(said))
-            heard, said = [], []
+            heard = []
         if event.interrupted or event.turn_complete:
             streamed = False
+            said = []  # the long-reply check only ever sees this turn's words
             guard.turn_over()
-        if event.turn_complete and guard.ending:
+        if event.turn_complete and guard.hang_up_now():
             await asyncio.sleep(guard.GOODBYE_SECONDS)  # let the goodbye play
             await ws.close(code=1000, reason="Call ended: only garage questions on this line")
             return

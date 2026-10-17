@@ -6,14 +6,19 @@ call. Off-topic → the gateway stops forwarding the agent's audio, tells the ph
 the agent say one line instead (see gateway.Guard). Typed text is checked before it ever reaches Gemini.
 
 Normal turns aren't delayed: the check runs alongside the reply and only acts when the verdict is "off-topic".
-If the check fails (network, quota), the turn goes ahead: the instruction rule still applies. TOPIC_GUARD=0 turns
-the layer off.
+If the check fails (network, quota, too many checks already running), the turn goes ahead: the instruction rule
+still applies. TOPIC_GUARD=0 turns the layer off.
+
+Checks run on their own small thread pool with a request timeout, so a slow or hung check model can never use up
+the threads the voice sessions need for Firestore.
 """
 
 import asyncio
 import json
 import logging
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 from app import config
 
@@ -42,6 +47,9 @@ Reply with JSON only: {{"on_topic": true}} or {{"on_topic": false}}"""
 
 WORDS = re.compile(r"\w+", re.UNICODE)
 
+_pool = ThreadPoolExecutor(max_workers=config.TOPIC_WORKERS, thread_name_prefix="topic")
+_slots = threading.BoundedSemaphore(config.TOPIC_WORKERS)  # freed when a check's thread is done, not when we stop waiting
+
 
 def worth_checking(text: str) -> bool:
     """Very short utterances ("haan", "ok", "next") are never off-topic requests; skip the call."""
@@ -57,7 +65,9 @@ def _ask(text: str, role: str) -> bool | None:
         model=config.TOPIC_MODEL,
         contents=[PROMPT.format(scope=SCOPE.get(role, SCOPE["mechanic"]), text=text.replace('"', "'")[:600])],
         config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0,
-                                           thinking_config=types.ThinkingConfig(thinking_budget=0)))
+                                           thinking_config=types.ThinkingConfig(thinking_budget=0),
+                                           http_options=types.HttpOptions(
+                                               timeout=int(config.TOPIC_TIMEOUT_SECONDS * 1000))))
     verdict = json.loads(response.text or "{}").get("on_topic")
     return verdict if isinstance(verdict, bool) else None
 
@@ -66,11 +76,26 @@ async def on_topic(text: str, role: str) -> bool | None:
     """True / False, or None when the guard is off, the text is too short to judge, or the check failed."""
     if not config.TOPIC_GUARD or not worth_checking(text):
         return None
+    if not _slots.acquire(blocking=False):
+        log.warning("too many topic checks running; letting the turn through")
+        return None
     try:
-        return await asyncio.wait_for(asyncio.to_thread(_ask, text, role), timeout=config.TOPIC_TIMEOUT_SECONDS)
+        work = asyncio.get_running_loop().run_in_executor(_pool, _ask_in_slot, text, role)
+    except Exception:
+        _slots.release()
+        raise
+    try:
+        return await asyncio.wait_for(work, timeout=config.TOPIC_TIMEOUT_SECONDS)
     except Exception:
         log.warning("topic check failed; letting the turn through", exc_info=True)
         return None
+
+
+def _ask_in_slot(text: str, role: str) -> bool | None:
+    try:
+        return _ask(text, role)
+    finally:
+        _slots.release()
 
 
 REFUSAL_NOTE = ("[system] The user's last request is not about this garage's work, so it was blocked and they "

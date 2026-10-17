@@ -25,6 +25,7 @@ TOPIC_GUARD = _env("TOPIC_GUARD", "1") == "1"
 TOPIC_MODEL = _env("TOPIC_MODEL", "gemini-2.5-flash-lite")
 TOPIC_TIMEOUT_SECONDS = float(_env("TOPIC_TIMEOUT_SECONDS", "4"))
 TOPIC_STRIKES_TO_END_CALL = int(_env("TOPIC_STRIKES_TO_END_CALL", "2"))  # front-desk callers only
+TOPIC_WORKERS = int(_env("TOPIC_WORKERS", "8"))  # checks running at once per instance; more fail open
 
 # Agent voice. The Live API has no speaking-rate setting (only a voice name), so pace is an instruction.
 # LIVE_VOICE: a prebuilt voice name (e.g. Kore, Charon, Aoede); empty = the model's default voice.

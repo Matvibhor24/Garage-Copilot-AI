@@ -12,12 +12,15 @@ from tests.helpers import mechanic
 G = "shree-auto"
 
 
-@pytest.mark.parametrize("words", ["yes", "Haan kar do", "ok search it", "ho, chalel", "हाँ कर दो", "theek hai", "sure"])
+@pytest.mark.parametrize("words", ["yes", "Haan kar do", "ok search it", "ho, chalel", "हाँ कर दो", "theek hai", "sure",
+                                   "yes, no problem", "ok no worries", "haan, koi dikkat nahi", "हाँ, कोई बात नहीं",
+                                   "हो, काही हरकत नाही", "मतलब हाँ, देख लो"])
 def test_yes_in_three_languages(words):
     assert consent.agrees(words)
 
 
-@pytest.mark.parametrize("words", ["no", "nahi rehne do", "nako", "नहीं", "yes... actually no, don't", "", "what is the gap?"])
+@pytest.mark.parametrize("words", ["no", "nahi rehne do", "nako", "नहीं", "yes... actually no, don't", "", "what is the gap?",
+                                   "मत करो", "kya ho raha hai", "pehle plug check kar"])
 def test_no_or_not_an_answer(words):
     assert not consent.agrees(words)
 
@@ -70,3 +73,13 @@ def test_manual_miss_then_the_mechanics_yes_then_one_search(garage):
     assert out["source"] == "web" and garage == ["hard to start"]
     again = asyncio.run(tools.web_search_fixes("hard to start", "", True, ctx("w4")))  # needs a new offer and yes
     assert "hasn't said yes" in again["error"] and garage == ["hard to start"]
+
+
+def test_a_manual_passage_that_doesnt_answer_still_lets_the_mechanic_say_yes(garage, monkeypatch):
+    """The manual matched something (found=True) but not the answer: the agent offers a search, and the yes counts."""
+    hit = {"title": "Splendor Plus owner's manual", "page": 12, "section": "Starting", "text": "Turn the key to ON."}
+    monkeypatch.setattr(manuals, "lookup", lambda who, g, rid, q, model: {"found": True, "vehicle": model, "sources": [hit]})
+    assert tools.lookup_manual("hard to start in the morning", "", ctx("m1"))["found"] is True
+    consent.heard("m-raju", "haan, koi problem nahi, search karo")
+    out = asyncio.run(tools.web_search_fixes("hard to start", "", True, ctx("w1")))
+    assert out["source"] == "web" and garage == ["hard to start"]
