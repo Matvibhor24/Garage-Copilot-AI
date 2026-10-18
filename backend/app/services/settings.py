@@ -11,10 +11,10 @@ from app.services.core import Forbidden, Invalid
 
 MAX_QUOTE_LIMIT = 100_000
 GARAGE_FIELDS = ("name", "city")
-CONFIG_FIELDS = ("quote_limit", "lang", "supplier", "reorder_qty", "low_at")
-LABELS = {"quote_limit": "auto-approve limit", "name": "garage name", "city": "city", "lang": "customer language",
+CONFIG_FIELDS = ("quote_limit", "service_fee", "lang", "supplier", "reorder_qty", "low_at")
+LABELS = {"quote_limit": "auto-approve limit", "service_fee": "service charge", "name": "garage name", "city": "city", "lang": "customer language",
           "supplier": "supplier", "reorder_qty": "reorder quantity", "low_at": "low-stock level"}
-DEFAULTS = {"quote_limit": 0, "lang": "en", "supplier": "", "reorder_qty": 5, "low_at": 1}
+DEFAULTS = {"quote_limit": 0, "service_fee": jobs.SERVICE_FEE, "lang": "en", "supplier": "", "reorder_qty": 5, "low_at": 1}
 
 
 def get_settings(who: dict, garage_id: str) -> dict:
@@ -56,7 +56,7 @@ def validate(changes: dict) -> dict:
         raise Invalid(f"unknown setting: {', '.join(sorted(unknown))}")
     clean = {}
     for field, value in changes.items():
-        if field == "quote_limit":
+        if field in ("quote_limit", "service_fee"):
             clean[field] = _whole(value, field, 0, MAX_QUOTE_LIMIT)
         elif field == "reorder_qty":
             clean[field] = _whole(value, field, 1, 999)
@@ -72,7 +72,7 @@ def validate(changes: dict) -> dict:
 
 
 def _shown(field: str, value) -> str:
-    if field == "quote_limit":
+    if field in ("quote_limit", "service_fee"):
         return f"₹{value:,}"
     if field == "lang":
         return gemini.LANGUAGES.get(value, value)

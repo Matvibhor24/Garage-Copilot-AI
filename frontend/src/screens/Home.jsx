@@ -78,7 +78,7 @@ export default function Home() {
               lines={['After the mechanic sends the quote, open Ramesh\'s page.', 'Approve the ₹950 quote with one tap and watch the timeline move.', 'Switch to हिंदी, or tap “Call the garage”.']} />
           ) : (
             <TryCard step="2" title="Customer" icon={<PhoneIcon />}
-              lines={['Customers get a private link on WhatsApp when their vehicle is checked in.', 'They approve extra work there with one tap, and can call the garage.']} />
+              lines={['Customers get a private link on WhatsApp when their vehicle is checked in.', 'They approve extra work there with one tap, and can call the garage.', 'Trying it out? Tap “Customer view ↗” on the mechanic’s job card to open that page.']} />
           )}
           <div className="lp-col">
             <TryCard step="3" to="/owner" title="Owner" icon={<GridIcon />} cta="Open the owner dashboard"

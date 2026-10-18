@@ -5,6 +5,7 @@ import { api, requestId } from '../data/api.js'
 import { confirmPhoneSignIn, MODE, session, signInDev, signOut, startPhoneSignIn } from '../data/auth.js'
 import { useLiveView } from '../data/live.js'
 import { actionDetail, actionLabel, clock, minutes, plate, rupees } from '../format.js'
+import { TRY } from '../config.js'
 import { Brand, CountUp, ErrorNote, LiveBadge, Skeleton, Spinner, useToast } from '../ui.jsx'
 import JobViewer from '../vehicle3d/JobViewer.jsx'
 import GarageFloor from '../garage3d/GarageFloor.jsx'
@@ -43,6 +44,12 @@ function OwnerSignIn({ onDone }) {
           <p className="muted">Jobs, approvals, stock and today's money. Nothing to type in.</p>
         </div>
 
+        {MODE === 'firebase' && TRY && (
+          <div className="try-login small">
+            <span>Trying GarageCopilot? Phone <strong className="mono">{TRY.ownerPhone}</strong>, code <strong className="mono">{TRY.ownerCode}</strong> (a test number: no SMS is sent).</span>
+            {!confirmation && <button className="btn btn-sm" onClick={() => setPhone(TRY.ownerPhone)}>Fill in</button>}
+          </div>
+        )}
         {MODE === 'firebase' && !confirmation && (
           <form className="stack" onSubmit={(e) => { e.preventDefault(); run(async () => setConfirmation(await startPhoneSignIn(phone.replace(/\s/g, ''), 'send-code'))) }}>
             <div className="field"><label htmlFor="phone">Phone number</label>

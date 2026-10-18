@@ -202,10 +202,12 @@ def request_estimate(who, garage_id, request_id, work_wanted: str, vehicle: str,
                     lines.append({"part_id": c["id"], "name": c["name"], "qty": need, "price": c["price"],
                                   "total": c["price"] * need})
         labour = max([i.get("labour", 0) for i in main] or [0])
-        total = sum(line["total"] for line in lines) + labour
+        service = jobs.config(garage_id).get("service_fee", jobs.SERVICE_FEE)  # every job has the service charge
+        total = sum(line["total"] for line in lines) + labour + service
         estimate = {"phone": who["phone"], "job_id": who.get("job_id", ""), "verified": who["verified"], "name": name,
                     "vehicle": vehicle,
-                    "work": work_wanted, "lines": lines, "labour": labour, "total": total, "status": "asked",
+                    "work": work_wanted, "lines": lines, "labour": labour, "service_fee": service, "total": total,
+                    "status": "asked",
                     "at": core.now(), "call_id": who.get("call_id", "")}
         estimate_id = jobs.next_id(garage_id, "next_estimate_no", "E", "estimates", estimate)
         text = (f"Caller {_contact(who)}{f' ({name})' if name else ''} asks the price for {work_wanted} on a "
@@ -235,7 +237,7 @@ def answer_estimate(who, garage_id, request_id, estimate_id, send: bool, total: 
         estimate_ref(garage_id, estimate_id).update({"status": "sent", "total": amount, "answered_at": core.now()})
         garage_name = (core.garage(garage_id).get().to_dict() or {}).get("name", "the garage")
         text_en = (f"Hi{(' ' + est['name']) if est.get('name') else ''}, {garage_name} here. Estimate for {est['work']}"
-                   f"{(' on your ' + est['vehicle']) if est.get('vehicle') else ''}: about ₹{amount} (parts and labour). "
+                   f"{(' on your ' + est['vehicle']) if est.get('vehicle') else ''}: about ₹{amount} (service charge, parts and labour). "
                    "The final price is confirmed after we inspect the vehicle.")
         to = f"c-{est['phone']}" if est.get("phone") else jobs.job_ref(garage_id, est["job_id"]).get().to_dict()["customer_id"]
         message = {"to": to, "kind": "estimate", "estimate_id": estimate_id, "lang": "en",

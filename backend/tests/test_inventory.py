@@ -26,12 +26,12 @@ def test_check_stock_by_spoken_name(garage):
 
 def test_log_part_used_decrements_once(garage):
     out = inventory.log_part_used(mechanic(), G, "r2", "J-1042", "clutch plate")
-    assert out["qty_left"] == 1 and out["low_stock"] is True and out["bill"] == 650
+    assert out["qty_left"] == 1 and out["low_stock"] is True and out["bill"] == 350 + 650
     again = inventory.log_part_used(mechanic(), G, "r2", "J-1042", "clutch plate")  # voice retry
     assert again == out
     assert inventory.part_ref(G, "clutch-splendor").get().to_dict()["qty"] == 1
     job = jobs.get_job(mechanic(), G, "J-1042")
-    assert job["bill"] == 650 and len(job["parts"]) == 1
+    assert job["bill"] == 350 + 650 and len(job["parts"]) == 1
 
 
 def test_cannot_use_more_than_stock(garage):

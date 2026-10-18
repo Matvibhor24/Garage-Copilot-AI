@@ -175,8 +175,8 @@ export function Jobs() {
                 <td data-label="Customer">{r.customer}</td>
                 <td data-label="Mechanic">{r.mechanic || '—'}</td>
                 <td data-label="Status"><span className={`chip chip-sm ${r.status === 'closed' ? 'chip-ok' : 'chip-accent'}`}>{r.status === 'closed' ? 'Closed' : STAGE_LABEL[r.stage] || 'Open'}</span></td>
-                <td data-label="Bill" className="num" title={`Parts ${rupees(r.parts)} + consumables ${rupees(r.consumables)} + labour ${rupees(r.labour)}`}>
-                  {rupees(r.bill)}{r.bill > 0 && <span className="muted small rec-split">{rupees(r.parts)} + {rupees(r.consumables)} + {rupees(r.labour)}</span>}
+                <td data-label="Bill" className="num" title={`Service ${rupees(r.service || 0)} + parts ${rupees(r.parts)} + consumables ${rupees(r.consumables)} + labour ${rupees(r.labour)}`}>
+                  {rupees(r.bill)}{r.bill > 0 && <span className="muted small rec-split">{r.service ? `${rupees(r.service)} + ` : ''}{rupees(r.parts)} + {rupees(r.consumables)} + {rupees(r.labour)}</span>}
                 </td>
                 <td data-label="Time" className="num">{minutes(r.minutes) || '—'}</td>
               </tr>

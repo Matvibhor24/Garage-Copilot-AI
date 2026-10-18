@@ -35,7 +35,7 @@ def test_over_limit_waits_for_customer_then_approve(job):
     [heard] = messages("quote_approved")
     assert heard["to"] == "m-raju" and heard["text"] == "Ramesh approved. Go ahead."
     job_doc = jobs.get_job(mechanic(), G, job)
-    assert job_doc["labour"] == 300 and job_doc["bill"] == 300 and job_doc["pending_quote"] is None
+    assert job_doc["labour"] == 300 and job_doc["bill"] == 350 + 300 and job_doc["pending_quote"] is None
 
 
 def test_under_limit_is_auto_approved(job):

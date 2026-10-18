@@ -23,3 +23,12 @@ export function wsBase() {
   const base = (env.VITE_WS_BASE || API_BASE || window.location.origin).replace(/\/$/, '')
   return base.replace(/^http/, 'ws')
 }
+
+// Sign-in hints and the "Try a demo" guide for people trying the hosted product (judges). VITE_TRY=0 hides them.
+// The owner's number must be a Firebase test phone number with this code (DEPLOY.md step 8).
+export const TRY = env.VITE_TRY === '0' ? null : {
+  mechanic: env.VITE_TRY_MECHANIC || 'Raju',
+  pin: env.VITE_TRY_PIN || '1234',
+  ownerPhone: env.VITE_TRY_OWNER_PHONE || '+91 98000 00001',
+  ownerCode: env.VITE_TRY_OWNER_CODE || '482731',
+}

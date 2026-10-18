@@ -4,12 +4,13 @@ import { api } from '../data/api.js'
 import { shrinkPhoto } from '../photo.js'
 import { session, signInWithPin, signOut } from '../data/auth.js'
 import { useLiveView } from '../data/live.js'
-import { DEMO } from '../config.js'
+import { DEMO, TRY } from '../config.js'
 import { plate, STAGE_LABEL } from '../format.js'
 import { Brand, Spinner, useToast } from '../ui.jsx'
 import { Bubble, CameraIcon, KeyboardIcon, LangPicker, Orb } from '../voice/parts.jsx'
 import { readLang, saveLang } from '../voice/lang.js'
 import { useSpaceToTalk, useVoice } from '../voice/useVoice.js'
+import TryGuide from './TryGuide.jsx'
 
 // Shift policy (shared garage phone): the voice screen only shows for a mechanic who signed in on this screen.
 // Leaving it in any way signs them out (Back/Forward or a link inside the app, going to another site and
@@ -98,6 +99,12 @@ function PinSignIn({ onDone }) {
           <span className="eyebrow">Mechanic</span>
           <h1>Who's working?</h1>
         </div>
+        {TRY && !DEMO && (
+          <div className="try-login small">
+            <span>Trying GarageCopilot? Sign in as <strong>{TRY.mechanic}</strong>, PIN <strong className="mono">{TRY.pin}</strong>.</span>
+            <button className="btn btn-sm" onClick={() => setName(TRY.mechanic)}>Fill in</button>
+          </div>
+        )}
         <div className="field">
           <label htmlFor="name">Your name</label>
           <input id="name" className="input" autoComplete="username" value={name} onChange={(e) => setName(e.target.value)} placeholder={DEMO ? 'Raju' : 'Name'} />
@@ -135,6 +142,9 @@ function VoiceScreen({ me, onSignOut }) {
   const [text, setText] = useState('')
   const [muted, setMuted] = useState(false)
   const [menu, setMenu] = useState(false)
+  const [guide, setGuide] = useState(() => {
+    try { return !!TRY && !DEMO && localStorage.getItem('gc.try-seen') !== '1' } catch { return !!TRY && !DEMO }
+  })
   const feed = useRef(null)
   const photo = useRef(null)
   const g = me.garage
@@ -220,9 +230,15 @@ function VoiceScreen({ me, onSignOut }) {
 
   return (
     <main className="voice theme-dark">
+      {guide && (
+        <TryGuide
+          onClose={() => { setGuide(false); try { localStorage.setItem('gc.try-seen', '1') } catch { /* private mode */ } }}
+          onSay={ready ? (line) => voice.current.sendText(line) : null} />
+      )}
       <header className="voice-top">
         <Brand to="/mechanic" live={mode === 'listening' || mode === 'speaking'} />
         <div className="row" style={{ '--gap': '8px' }}>
+          {TRY && !DEMO && <button className="btn btn-ghost btn-sm" onClick={() => setGuide(true)}>Try a demo</button>}
           <LangPicker value={lang} onChange={switchLang} />
           <span className={`chip ${ready ? 'chip-ok' : status.status === 'error' ? 'chip-bad' : ''}`}>
             <span className={`dot ${ready ? 'live-dot' : ''}`} />{ready ? me.name : status.status === 'error' ? 'Offline' : me.name}
@@ -293,6 +309,10 @@ function JobStrip({ job }) {
       <span className={`chip ${waiting ? 'chip-warn' : job.status === 'done' ? 'chip-ok' : 'chip-accent'}`}>
         {waiting ? 'Waiting on customer' : job.status === 'done' ? 'Closed' : STAGE_LABEL[job.stage] || job.stage}
       </span>
+      {job.customer_url && (
+        <a className="btn btn-ghost btn-sm" href={job.customer_url} target="_blank" rel="noopener noreferrer"
+          title="Open the page the customer sees">Customer view ↗</a>
+      )}
     </div>
   )
 }

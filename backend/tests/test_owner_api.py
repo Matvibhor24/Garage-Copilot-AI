@@ -62,7 +62,7 @@ def test_dashboard_tiles_and_reorder(client, monkeypatch):
     clock.at("11:40")
     jobs.close_job(mechanic(), G, "r4", job)
     d = client.get("/api/owner/dashboard", headers=h("owner-token")).json()
-    assert d["open_jobs"] == 0 and d["pending_approvals"] == [] and d["revenue_today"] == 950
+    assert d["open_jobs"] == 0 and d["pending_approvals"] == [] and d["revenue_today"] == 350 + 950
     assert d["low_stock"] == [{"part_id": "clutch-splendor", "name": "Clutch plate set", "qty": 1}]
     clock.at("11:45")
     r = client.post("/api/owner/inventory/clutch-splendor/reorder", json={"request_id": "ro1"}, headers=h("owner-token"))
@@ -104,10 +104,13 @@ def test_dashboard_extras_and_staff_jobs(client):
     d = client.get("/api/owner/dashboard", headers=h("owner-token")).json()
     assert d["garage"] == {"id": G, "name": "Shree Auto", "city": "Pune"}
     assert d["reorder_asks"][0]["part_id"] == "clutch-splendor"
-    assert d["jobs"][0]["id"] == "J-1042" and d["jobs"][0]["bill"] == 650
+    assert d["jobs"][0]["id"] == "J-1042" and d["jobs"][0]["bill"] == 350 + 650
     assert {m["kind"] for m in d["messages"]} >= {"status_link", "reorder_ask"}
     staff = client.get("/api/jobs", headers=h("raju-token")).json()
     assert [j["id"] for j in staff] == ["J-1042"] and "parts" not in staff[0]
+    # Each job carries the customer's page link, and the link opens that job's customer page
+    token = staff[0]["customer_url"].rsplit("/j/", 1)[1]
+    assert client.get(f"/api/j/{token}").json()["job_id"] == "J-1042"
 
 
 def test_pin_login_dev_token_when_auth_disabled(client, monkeypatch):

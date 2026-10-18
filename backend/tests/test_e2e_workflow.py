@@ -103,19 +103,19 @@ def test_demo_job_end_to_end(fake_db, monkeypatch):
     assert [t["label"] for t in api.get(f"/api/j/{token}").json()["timeline"]] == ["Checked in", "In service", "Washing"]
     clock.at("11:58")
     closed = say(tools.close_job, "")
-    assert closed["bill"] == 950
+    assert closed["bill"] == 350 + 950  # service charge + the approved quote
     part = inventory.part_ref(G, "clutch-splendor").get().to_dict()
     assert (part["qty"], part["low_stock"]) == (1, True)
     job = jobs.job_ref(G, "J-1042").get().to_dict()
-    assert (job["stage"], job["bill"]) == ("done", 950)
+    assert (job["stage"], job["bill"]) == ("done", 350 + 950)
     page = api.get(f"/api/j/{token}").json()
-    assert page["stage_label"] == "Ready for pickup" and page["bill"] == 950 and page["labour"] == 300
+    assert page["stage_label"] == "Ready for pickup" and page["bill"] == 350 + 950 and page["labour"] == 300 and page["service_fee"] == 350
     assert page["parts"] == [{"name": "Clutch plate set", "qty": 1, "price": 650, "total": 650}]
-    assert "Final bill: ₹950" in messages("final_bill")[0]["text"]
+    assert "Final bill: ₹1300" in messages("final_bill")[0]["text"]
 
     # Owner: dashboard tiles and the audit trail (who did what, when).
     dash = api.get("/api/owner/dashboard", headers=owner_h).json()
-    assert dash["pending_approvals"] == [] and dash["revenue_today"] == 950
+    assert dash["pending_approvals"] == [] and dash["revenue_today"] == 350 + 950
     assert dash["low_stock"] == [{"part_id": "clutch-splendor", "name": "Clutch plate set", "qty": 1}]
     trail = [(datetime.fromisoformat(a["at"]).astimezone(IST).strftime("%H:%M"), a["action"], a["by_name"])
              for a in reversed(api.get("/api/owner/audit", headers=owner_h).json())]

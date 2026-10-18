@@ -131,7 +131,7 @@ GARAGES = [
     {
         "id": "shree-auto",
         "doc": {"name": "Shree Auto", "city": "Pune", "next_job_no": 1042, "next_quote_no": 77},
-        "config": {"quote_limit": 500, "lang": "en", "supplier": "Sai Spares", "reorder_qty": 5, "low_at": 1, "currency": "INR"},
+        "config": {"quote_limit": 500, "service_fee": 350, "lang": "en", "supplier": "Sai Spares", "reorder_qty": 5, "low_at": 1, "currency": "INR"},
         "owner": {"uid": "o-asha", "name": "Asha", "phone": "+919800000001"},
         "mechanics": [{"uid": "m-raju", "name": "Raju"}, {"uid": "m-salim", "name": "Salim"}],
         "parts": TWO_WHEELER_PARTS,
@@ -149,7 +149,7 @@ GARAGES = [
     {
         "id": "ganesh-motors",
         "doc": {"name": "Ganesh Motors", "city": "Nashik", "next_job_no": 310, "next_quote_no": 12},
-        "config": {"quote_limit": 2000, "lang": "en", "supplier": "Nashik Auto Parts", "reorder_qty": 3, "low_at": 1, "currency": "INR"},
+        "config": {"quote_limit": 2000, "service_fee": 350, "lang": "en", "supplier": "Nashik Auto Parts", "reorder_qty": 3, "low_at": 1, "currency": "INR"},
         "owner": {"uid": "o-vikram", "name": "Vikram", "phone": "+919800000002"},
         "mechanics": [{"uid": "m-sunil", "name": "Sunil"}],
         "parts": FOUR_WHEELER_PARTS,

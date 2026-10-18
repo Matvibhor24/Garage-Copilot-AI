@@ -10,7 +10,7 @@ import io
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from app import db
+from app import db, links
 from app.services import core, jobs
 from app.services.core import Forbidden, NotFound, get_doc
 
@@ -72,6 +72,7 @@ def _row(job: dict, tz: ZoneInfo, now: str) -> dict:
         "mechanic": job.get("mechanic_name", ""),
         "status": "closed" if job.get("status") == "done" else "open",
         "stage": job.get("stage", ""),
+        "service": m["service"],
         "parts": m["parts"],
         "consumables": m["consumables"],
         "labour": m["labour"],
@@ -134,8 +135,8 @@ def jobs_page(who, garage_id, from_="", to="", status="", mechanic="", q="", cur
             "next_cursor": str(start + PAGE) if start + PAGE < len(rows) else ""}
 
 
-CSV_FIELDS = ["date", "job_id", "vehicle", "plate", "customer", "mechanic", "status", "parts", "consumables", "labour",
-              "bill", "cost", "margin", "minutes", "closed_at"]
+CSV_FIELDS = ["date", "job_id", "vehicle", "plate", "customer", "mechanic", "status", "service", "parts", "consumables",
+              "labour", "bill", "cost", "margin", "minutes", "closed_at"]
 
 
 def jobs_csv(who, garage_id, from_="", to="", status="", mechanic="", q="") -> str:
@@ -161,6 +162,7 @@ def job_detail(who, garage_id, job_id) -> dict:
         filter=db.FieldFilter("job_id", "==", job_id)).stream()), key=lambda m: m.get("at", ""))
     photos = sorted({p for p in [job.get("last_photo")] + [q.get("photo") for q in quotes] if p})
     return job | {
+        "customer_url": links.job_url(garage_id, job_id),
         "money": jobs.money(job),
         "minutes": minutes_taken(job, core.now()),
         "timeline": [{"name": s["name"], "label": jobs.STAGE_LABELS.get(s["name"], s["name"]),

@@ -271,6 +271,7 @@ function Bill({ data, done, tr }) {
         <h3>{done ? tr('finalBill') : tr('billSoFar')}</h3>
       </div>
       <dl className="lines">
+        {data.service_fee > 0 && <div className="line"><dt>{tr('service')}</dt><dd className="num">{rupees(data.service_fee)}</dd></div>}
         {data.parts.map((p, i) => (
           <div key={i} className="line"><dt>{p.name}{p.qty > 1 ? ` × ${p.qty}` : ''}</dt><dd className="num">{rupees(p.total)}</dd></div>
         ))}

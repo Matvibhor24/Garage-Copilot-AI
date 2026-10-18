@@ -5,6 +5,7 @@ import uuid
 from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel
 
+from app import links
 from app.auth import current_owner, current_user
 from app.services import frontdesk, inventory, jobs, owner, people, photos, reports, settings
 
@@ -53,8 +54,10 @@ def me(who=Depends(current_user)):
 
 @router.get("/jobs")
 def staff_jobs(who=Depends(current_user)):
-    """Open jobs for any staff member (the mechanic screen's job picker)."""
-    return [jobs.compact(j) for j in jobs.list_jobs(who, who["garage_id"])]
+    """Open jobs for any staff member (the mechanic screen's job picker), each with the customer's page link, so
+    staff (and anyone trying the product) can open what the customer sees."""
+    g = who["garage_id"]
+    return [jobs.compact(j) | {"customer_url": links.job_url(g, j["id"])} for j in jobs.list_jobs(who, g)]
 
 
 @router.get("/owner/dashboard")

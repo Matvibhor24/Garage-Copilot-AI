@@ -73,7 +73,7 @@ function EstimateAsk({ e, onDone }) {
       <div className="grow stack" style={{ '--gap': '2px' }}>
         <span className="eyebrow" style={{ color: 'var(--accent)' }}>Price asked · {ago(e.at)}</span>
         <p style={{ fontWeight: 550 }}>{e.name || e.phone}: {e.work}{e.vehicle ? ` on a ${e.vehicle}` : ''}</p>
-        <p className="small muted">{e.lines.map((l) => `${l.name} ${rupees(l.total)}`).join(' + ')}{e.labour ? ` + labour ${rupees(e.labour)}` : ''}</p>
+        <p className="small muted">{e.lines.map((l) => `${l.name} ${rupees(l.total)}`).join(' + ')}{e.labour ? ` + labour ${rupees(e.labour)}` : ''}{e.service_fee ? ` + service ${rupees(e.service_fee)}` : ''}</p>
       </div>
       <div className="row" style={{ '--gap': '8px' }}>
         <button className="btn btn-accent btn-sm" onClick={() => answer('send')} disabled={!!busy}>{busy === 'send' ? <Spinner /> : `Send ${rupees(e.total)}`}</button>

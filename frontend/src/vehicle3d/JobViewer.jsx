@@ -28,7 +28,10 @@ export default function JobViewer({ job, quote, onClose }) {
             <span className="muted small mono">{job.id}</span>
             <h2 id="job-viewer-title">{job.vehicle} · {plate(job.plate)}</h2>
           </div>
-          <button className="btn btn-ghost btn-sm" onClick={() => dialog.current.close()} autoFocus>Close</button>
+          <div className="row" style={{ '--gap': '8px' }}>
+            {full?.customer_url && <a className="btn btn-ghost btn-sm" href={full.customer_url} target="_blank" rel="noopener noreferrer">Customer view ↗</a>}
+            <button className="btn btn-ghost btn-sm" onClick={() => dialog.current.close()} autoFocus>Close</button>
+          </div>
         </div>
         <Vehicle3D job={view} compact />
         <div className="v3d-facts">
@@ -44,11 +47,15 @@ export default function JobViewer({ job, quote, onClose }) {
   )
 }
 
-// parts + consumables + labour = bill, and what the parts and consumables cost the garage (C13).
+// service charge + parts + consumables + labour = bill, and what the parts and consumables cost the garage (C13).
 export function Money({ m, done }) {
   return (
     <div className="money" aria-label="Bill and margin">
       <div className="money-sum">
+        {m.service > 0 && <>
+          <span><span className="muted small">Service</span><strong className="num">{rupees(m.service)}</strong></span>
+          <span className="money-op" aria-hidden="true">+</span>
+        </>}
         <span><span className="muted small">Parts</span><strong className="num">{rupees(m.parts)}</strong></span>
         <span className="money-op" aria-hidden="true">+</span>
         <span><span className="muted small">Consumables</span><strong className="num">{rupees(m.consumables)}</strong></span>

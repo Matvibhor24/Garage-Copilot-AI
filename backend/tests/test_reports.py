@@ -94,7 +94,7 @@ def test_job_detail_has_timeline_money_and_messages(client, history):  # noqa: F
 
     job = jobs.create_job(mechanic(), G, "r9", "MH12QQ1111", "Splendor Plus", "Neha", "+919811111111")["job_id"]
     d = get(client, f"/api/owner/jobs/{job}")
-    assert d["timeline"][0]["label"] == "Checked in" and d["money"]["bill"] == 0
+    assert d["timeline"][0]["label"] == "Checked in" and d["money"]["bill"] == 350 and d["customer_url"].startswith("http")
     assert d["messages"][0]["kind"] == "status_link" and d["quotes"] == [] and d["photos"] == []
     assert client.get(f"/api/owner/jobs/{job}", headers=h("vikram-token")).status_code == 404
 

@@ -38,14 +38,14 @@ def test_billing_split_garage_cost_and_margin(job):
     j = jobs.get_job(mechanic(), G, job)
     billed = {line["name"]: line["total"] for line in j["parts"]}
     assert billed == {"Clutch plate set": 650, "Brake shoe set": 260, "Brake cleaner (one job)": 30}
-    assert j["bill"] == 940
+    assert j["bill"] == 350 + 940  # service charge + parts, billable consumables, labour
     assert {c["name"] for c in j["consumables"]} == {"Clutch cover gasket", "M6 bolt", "M6 washer", "Grease (10 g)",
                                                      "Split pin"}
     m = jobs.money(j)
-    assert (m["parts"], m["consumables"], m["labour"], m["bill"]) == (910, 30, 0, 940)
+    assert (m["service"], m["parts"], m["consumables"], m["labour"], m["bill"]) == (350, 910, 30, 0, 1290)
     # cost: clutch 455 + brake shoe 180 + brake cleaner 20 + gasket 45 + bolts 4x2 + washers 4x1 + grease 2x8 + pins 2x1
     assert m["cost"] == 455 + 180 + 20 + 45 + 8 + 4 + 16 + 2
-    assert m["margin"] == 940 - m["cost"]
+    assert m["margin"] == 1290 - m["cost"]
     view = jobs.customer_view(G, job)
     assert [p["name"] for p in view["parts"]] == ["Clutch plate set", "Brake shoe set", "Brake cleaner (one job)"]
 
@@ -76,8 +76,8 @@ def test_owner_sees_cost_and_margin(job):
     jobs.close_job(mechanic(), G, "c1", job)
     d = owner.dashboard(owner_actor(), G)
     card = next(j for j in d["jobs"] if j["id"] == job)
-    assert card["money"]["bill"] == 650 and card["money"]["cost"] == 455 + 45 + 8 + 4 + 8
-    assert d["cost_today"] == card["money"]["cost"] and d["margin_today"] == 650 - card["money"]["cost"]
+    assert card["money"]["bill"] == 350 + 650 and card["money"]["cost"] == 455 + 45 + 8 + 4 + 8
+    assert d["cost_today"] == card["money"]["cost"] and d["margin_today"] == 350 + 650 - card["money"]["cost"]
     ctx = SimpleNamespace(state={"garage_id": G, "uid": "o-asha", "name": "Asha", "role": "owner"}, function_call_id="o1")
     details = tools.job_details(job, ctx)
     assert details["money"]["margin"] == card["money"]["margin"]

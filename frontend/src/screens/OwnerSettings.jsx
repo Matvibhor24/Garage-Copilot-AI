@@ -8,6 +8,8 @@ import { ErrorNote, Skeleton, Spinner, useToast } from '../ui.jsx'
 const FIELDS = [
   { key: 'quote_limit', label: 'Auto-approve limit (₹)', type: 'number',
     help: 'Quotes up to this amount are approved without asking the customer. 0 = always ask the customer.' },
+  { key: 'service_fee', label: 'Service charge (₹)', type: 'number',
+    help: 'Added to every job’s bill, even when no parts are used. 0 = no service charge.' },
   { key: 'name', label: 'Garage name', help: 'Shown on the customer page and in WhatsApp messages.' },
   { key: 'city', label: 'City', help: 'Shown next to the garage name.' },
   { key: 'lang', label: 'Default customer language', type: 'lang',

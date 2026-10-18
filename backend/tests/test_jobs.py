@@ -36,7 +36,7 @@ def test_stage_minutes_and_close(garage, monkeypatch):
     assert job["stage_minutes"] == {"intake": 21, "washing": 18}
     clock.at("11:40")
     closed = jobs.close_job(mechanic(), G, "r4", "J-1042")
-    assert closed["bill"] == 0 and closed["stage"] == "done"
+    assert closed["bill"] == 350 and closed["stage"] == "done"  # the service charge alone
     with pytest.raises(core.Invalid):
         jobs.update_stage(mechanic(), G, "r5", "J-1042", "washing")
     stages = [d.to_dict() for d in jobs.job_ref(G, "J-1042").collection("stages").stream()]
@@ -73,3 +73,18 @@ def test_dashboard_lists_stages_in_garage_order(fake_db):
 
     seed.seed(fake_db)
     assert list(owner_service.dashboard(owner(), G)["jobs_by_stage"]) == ["intake", "service", "waiting_approval", "washing", "ready"]
+
+
+
+def test_every_job_has_the_service_charge(fake_db):
+    """A job with no parts still bills the garage's service charge: ₹350 by default, the owner's amount once set."""
+    from app import seed
+    from app.services import settings
+
+    seed.seed(fake_db)
+    first = jobs.create_job(mechanic(), G, "s1", "MH12AB9999", "Activa", "Rahul")["job_id"]
+    assert jobs.get_job(mechanic(), G, first)["bill"] == 350
+    core.garage(G).collection("config").document("settings").update(settings.validate({"service_fee": "400"}))
+    second = jobs.create_job(mechanic(), G, "s2", "MH12AB8888", "Activa", "Rahul")["job_id"]
+    assert jobs.money(jobs.get_job(mechanic(), G, second))["service"] == 400
+    assert jobs.get_job(mechanic(), G, first)["bill"] == 350  # jobs already open keep their charge

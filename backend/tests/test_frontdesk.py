@@ -74,7 +74,7 @@ def test_estimate_goes_to_the_owner_first(garage):
     out = tools.request_estimate("clutch plate change", "Splendor Plus", "Kiran", call_ctx("+919811112222", False))
     assert out["status"] == "sent to the owner to confirm"
     est = frontdesk.estimate_ref(G, out["estimate_id"]).get().to_dict()
-    assert est["total"] == 650 + 300 and est["status"] == "asked"
+    assert est["total"] == 350 + 650 + 300 and est["status"] == "asked"
     assert messages("estimate_ask")[-1]["to"] == "owner"
     assert messages("estimate") == []  # the caller gets nothing until the owner confirms
     assert frontdesk.calls_overview(owner(), G)["estimates"][0]["id"] == out["estimate_id"]

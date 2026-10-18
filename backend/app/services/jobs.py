@@ -41,17 +41,21 @@ def find_job(who: dict, garage_id: str, ref: str) -> dict:
     raise NotFound(f"no open job matching '{ref}'")
 
 
+SERVICE_FEE = 350  # the garage's standard service charge on every job, unless its settings say otherwise
+
+
 def money(job: dict) -> dict:
-    """The job's bill split (parts + billable consumables + labour = bill), what the parts and consumables cost
-    the garage, and the margin (C13)."""
+    """The job's bill split (service charge + parts + billable consumables + labour = bill), what the parts and
+    consumables cost the garage, and the margin (C13). Jobs from before the service charge have none."""
     lines = job.get("parts", [])
     parts = sum(line["total"] for line in lines if not line.get("consumable"))
     consumables = sum(line["total"] for line in lines if line.get("consumable"))
     labour = job.get("labour", 0)
+    service = job.get("service_fee", 0)
     cost = sum(line.get("cost", 0) for line in lines) + sum(c.get("cost", 0) for c in job.get("consumables", []))
-    bill = parts + consumables + labour
-    return {"parts": parts, "consumables": consumables, "labour": labour, "bill": bill, "cost": cost,
-            "margin": bill - cost}
+    bill = service + parts + consumables + labour
+    return {"service": service, "parts": parts, "consumables": consumables, "labour": labour, "bill": bill,
+            "cost": cost, "margin": bill - cost}
 
 
 COMPACT_FIELDS = ("plate", "vehicle", "owner", "stage", "status", "stage_started_at", "mechanic_name", "bill",
@@ -110,7 +114,7 @@ def customer_texts(text_en: str, lang: str) -> dict:
 
 
 def bill_of(job: dict) -> int:
-    return sum(line["total"] for line in job.get("parts", [])) + job.get("labour", 0)
+    return job.get("service_fee", 0) + sum(line["total"] for line in job.get("parts", [])) + job.get("labour", 0)
 
 
 def status_link_message(garage_id: str, job_id: str, job: dict) -> dict:
@@ -133,6 +137,7 @@ def send_status_link(who, garage_id, request_id, job_id):
 def create_job(who, garage_id, request_id, plate, vehicle, owner_name, phone="", complaint="", lang=""):
     def work():
         settings = config(garage_id)
+        fee = settings.get("service_fee", SERVICE_FEE)
         at = core.now()
         customer_id, customer_lang = upsert_customer(garage_id, owner_name, phone, lang, settings.get("lang", "en"))
         job = {
@@ -154,7 +159,8 @@ def create_job(who, garage_id, request_id, plate, vehicle, owner_name, phone="",
             "quote_limit": settings.get("quote_limit", 0),
             "parts": [],
             "labour": 0,
-            "bill": 0,
+            "service_fee": fee,
+            "bill": fee,
         }
         job_id = next_id(garage_id, "next_job_no", "J", "jobs", job)
         job_ref(garage_id, job_id).collection("stages").document("s1").set({"name": "intake", "started_at": at})
@@ -211,7 +217,8 @@ def close_job(who, garage_id, request_id, job_id):
             **customer_texts(f"Hi {job['owner']}, your {job['vehicle']} is ready for pickup. Final bill: ₹{bill}.",
                              job.get("lang", "en")),
         }
-        return {"job_id": job_id, "stage": "done", "bill": bill, "parts": job["parts"], "labour": job["labour"]}, [message]
+        return {"job_id": job_id, "stage": "done", "bill": bill, "service_fee": job.get("service_fee", 0),
+                "parts": job["parts"], "labour": job["labour"]}, [message]
 
     return core.run(who, garage_id, request_id, "close_job", work)
 
@@ -254,6 +261,7 @@ def customer_view(garage_id: str, job_id: str) -> dict:
         "quotes": [_with_photo_url(garage_id, d.to_dict() | {"id": d.id}) for d in quotes.stream()],
         "parts": [{k: p[k] for k in ("name", "qty", "price", "total")} for p in job.get("parts", [])],
         "labour": job.get("labour", 0),
+        "service_fee": job.get("service_fee", 0),
         "bill": job.get("bill", 0),
         "messages": messages,  # what the garage sent this customer, in English and Hindi (C12)
     }
