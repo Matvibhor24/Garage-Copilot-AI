@@ -26,6 +26,12 @@ TOPIC_MODEL = _env("TOPIC_MODEL", "gemini-2.5-flash-lite")
 TOPIC_TIMEOUT_SECONDS = float(_env("TOPIC_TIMEOUT_SECONDS", "4"))
 TOPIC_STRIKES_TO_END_CALL = int(_env("TOPIC_STRIKES_TO_END_CALL", "2"))  # front-desk callers only
 TOPIC_WORKERS = int(_env("TOPIC_WORKERS", "8"))  # checks running at once per instance; more fail open
+# Model Armor (C18): full template name, projects/<p>/locations/<loc>/templates/<id>. Empty = screening off.
+MODEL_ARMOR_TEMPLATE = _env("MODEL_ARMOR_TEMPLATE")
+MODEL_ARMOR_LOCATION = _env("MODEL_ARMOR_LOCATION")  # empty = the location in the template name
+MODEL_ARMOR_TIMEOUT_SECONDS = float(_env("MODEL_ARMOR_TIMEOUT_SECONDS", "3"))
+MODEL_ARMOR_WORKERS = int(_env("MODEL_ARMOR_WORKERS", "8"))  # calls at once per instance; more are not checked
+MODEL_ARMOR_MAX_CHARS = int(_env("MODEL_ARMOR_MAX_CHARS", "4000"))
 
 # Agent voice. The Live API has no speaking-rate setting (only a voice name), so pace is an instruction.
 # LIVE_VOICE: a prebuilt voice name (e.g. Kore, Charon, Aoede); empty = the model's default voice.

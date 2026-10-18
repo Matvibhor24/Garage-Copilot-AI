@@ -37,7 +37,9 @@ export function useVoice({ handsFree = false, role = 'mechanic', lang = 'auto', 
         return setItems((list) => {
           const last = list[list.length - 1]
           const kept = last && last.kind === 'agent' && !last.final ? list.slice(0, -1) : list
-          return [...kept, { id: Math.random(), kind: 'note', text: 'Only garage work here: that request was blocked.', final: true }]
+          const text = e.reason !== 'safety' ? 'Only garage work here: that request was blocked.' // topic guard (C20)
+            : e.typed ? "That can't be sent." : 'That request failed a safety check.' // Model Armor (C18)
+          return [...kept, { id: Math.random(), kind: 'note', text, final: true }]
         })
       default:
     }

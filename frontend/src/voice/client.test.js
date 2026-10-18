@@ -136,3 +136,16 @@ describe('reply language (C11)', () => {
     expect(sockets[1].url).not.toContain('lang=')
   })
 })
+
+describe('blocked turns (C18/C20)', () => {
+  it('passes on why a turn was blocked: off topic, or a safety check on typed text', async () => {
+    const events = []
+    const v = createVoice({ onEvent: (e) => events.push(e) })
+    await v.connect()
+    sockets[0].open()
+    sockets[0].onmessage({ data: JSON.stringify({ type: 'blocked', reason: 'safety', typed: true }) })
+    expect(events.at(-1)).toEqual({ type: 'blocked', typed: true, reason: 'safety' })
+    sockets[0].onmessage({ data: JSON.stringify({ type: 'blocked', typed: false }) })
+    expect(events.at(-1)).toEqual({ type: 'blocked', typed: false, reason: 'off_topic' })
+  })
+})

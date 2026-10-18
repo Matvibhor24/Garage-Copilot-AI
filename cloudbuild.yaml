@@ -16,6 +16,9 @@ substitutions:
   _EMBED_DIM: "768"             # must match the vector index on manual_chunks (firestore.indexes.json)
   _TRANSCRIBE_MODEL: gemini-2.5-flash   # reads each manual page (scans and spec tables) for manuals-ingest
   _TRANSCRIBE_WORKERS: "4"
+  # Model Armor screening (C18): projects/<project>/locations/us-central1/templates/garage-copilot-guard once the
+  # template exists (DEPLOY.md section 18). Empty = screening off.
+  _MODEL_ARMOR_TEMPLATE: ""
 
 options:
   logging: CLOUD_LOGGING_ONLY
@@ -50,7 +53,7 @@ steps:
       - --min-instances=1                # demo: no cold start mid-sentence
       - --timeout=3600                   # long-lived voice WebSockets
       - --session-affinity
-      - --set-env-vars=GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${_GENAI_LOCATION},GOOGLE_GENAI_USE_VERTEXAI=TRUE,DB_BACKEND=firestore,GCS_BUCKET=${_GCS_BUCKET},PUBLIC_BASE_URL=${_PUBLIC_BASE_URL},SCHEDULER_SA_EMAIL=${_SCHEDULER_SA},SCHEDULER_AUDIENCE=${_SCHEDULER_AUDIENCE},EMBED_MODEL=${_EMBED_MODEL},EMBED_DIM=${_EMBED_DIM}
+      - --set-env-vars=GOOGLE_CLOUD_PROJECT=${PROJECT_ID},GOOGLE_CLOUD_LOCATION=${_GENAI_LOCATION},GOOGLE_GENAI_USE_VERTEXAI=TRUE,DB_BACKEND=firestore,GCS_BUCKET=${_GCS_BUCKET},PUBLIC_BASE_URL=${_PUBLIC_BASE_URL},SCHEDULER_SA_EMAIL=${_SCHEDULER_SA},SCHEDULER_AUDIENCE=${_SCHEDULER_AUDIENCE},EMBED_MODEL=${_EMBED_MODEL},EMBED_DIM=${_EMBED_DIM},MODEL_ARMOR_TEMPLATE=${_MODEL_ARMOR_TEMPLATE}
       - --set-secrets=LINK_SECRET=link-secret:latest
 
   # Imports vehicle manuals from gs://<bucket>/manuals/ into Firestore (C08). Deploying does not run it:

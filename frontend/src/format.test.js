@@ -47,3 +47,13 @@ describe('web searches in the feed (C14)', () => {
       .toBe('hard start (web · a.example, b.example)')
   })
 })
+
+describe('Model Armor flags in the activity feed (C18)', () => {
+  it('says what was flagged, where, and what was done', () => {
+    expect(actionLabel('armor_flagged')).toBe('AI safety: flagged by Model Armor')
+    expect(actionDetail({ action: 'armor_flagged', details: { where: 'caller', reasons: ['pi_and_jailbreak'], action: 'call ended' } }))
+      .toBe('caller · pi_and_jailbreak · call ended')
+    expect(actionDetail({ action: 'armor_flagged', details: { where: 'web search', reasons: [], action: 'results dropped' } }))
+      .toBe('web search · results dropped')
+  })
+})

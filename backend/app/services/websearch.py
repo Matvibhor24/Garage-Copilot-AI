@@ -68,6 +68,27 @@ async def search(question: str, vehicle: str, model=None) -> dict:
     return {"points": parse_points(text), "sites": sites, "suggestions_html": html}
 
 
+async def screen(who: dict, found: dict) -> dict:
+    """Model Armor on the results before the Live agent sees them (C18). Flagged → dropped. Fails closed: if Model
+    Armor can't be asked, the results aren't used either. Does nothing when screening is off."""
+    import asyncio
+
+    from app import armor
+
+    text = "\n".join(found.get("points", []))
+    if not armor.enabled() or not text:
+        return found
+    screened = await armor.screen_response(text, "web search")
+    if screened["ok"] is True:
+        return found
+    if screened["ok"] is False:
+        await asyncio.to_thread(armor.record, who, "web search", screened["reasons"], "results dropped", text)
+        note = "results failed a safety check"
+    else:
+        note = "the search results couldn't be safety-checked, so they weren't used"
+    return {"points": [], "sites": [], "suggestions_html": "", "blocked": note}
+
+
 def record(who: dict, garage_id: str, request_id: str, question: str, vehicle: str, found: dict) -> dict:
     """Audit the search (owner's feed: "Raju searched the web · ...") and return what the agent may say."""
     def work():
@@ -76,6 +97,8 @@ def record(who: dict, garage_id: str, request_id: str, question: str, vehicle: s
                "sites": found.get("sites", []), "points": points,
                "note": "From the web, not the manual. Not a diagnosis.",
                "safety": SAFETY_NOTE if needs_safety_note(question, points) else ""}
+        if found.get("blocked"):  # Model Armor dropped the results (C18)
+            out["note"] = found["blocked"]
         if found.get("suggestions_html"):
             # Google's grounding rules ask apps to show the search suggestions; kept with the search for the UI
             core.garage(garage_id).collection("web_searches").document(request_id).set(

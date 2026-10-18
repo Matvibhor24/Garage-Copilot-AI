@@ -14,6 +14,7 @@ POST /api/call/start or /api/j/{token}/call) the front desk agent for a customer
                                {"type": "turn_complete"} / {"type": "interrupted"}
                                {"type": "ignored", "reason": "no speech"}   a push-to-talk turn without speech
                                {"type": "blocked", "reason": "off_topic"}   the topic guard cut an off-topic turn (C20)
+                               {"type": "blocked", "reason": "safety"}      Model Armor flagged it (C18)
 One live connection per mechanic: a newer one (another tab or phone) makes the older one close with code 4409.
 Session state (current job) is loaded from and saved to Firestore, so any instance can serve the next connection.
 """
@@ -27,7 +28,7 @@ import uuid
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from google.genai import types
 
-from app import auth, config, consent, language, links, speech, tools, topic
+from app import armor, auth, config, consent, language, links, speech, tools, topic
 from app.services import core, frontdesk, voice
 
 log = logging.getLogger(__name__)
@@ -110,7 +111,10 @@ class Guard:
     reply. Off-topic → the rest of this turn's agent audio and words are dropped, the phone is told to stop playing,
     and the agent is asked to say one line instead. A caller who keeps at it has the call ended.
     One exchange (a request and the reply to it) costs one strike at most, however many of its checks come back
-    off-topic. Typed text is checked before it is sent on, in the background so the mic keeps streaming."""
+    off-topic. Typed text is checked before it is sent on, in the background so the mic keeps streaming.
+    Model Armor (C18) uses the same points when MODEL_ARMOR_TEMPLATE is set: a caller's finished utterances (a flag
+    costs a strike, like an off-topic request), typed text (alongside the topic check, so no extra wait), and the
+    agent's reply after each turn (logged only: it has been spoken already)."""
 
     REPLY_WORDS_TO_CHECK = 18  # garage replies are a sentence; a long answer gets checked once
     GOODBYE_SECONDS = 4  # a caller's goodbye plays before the call closes
@@ -156,7 +160,12 @@ class Guard:
         self._start(self._typed(text))
 
     async def _typed(self, text: str) -> None:
-        if await topic.on_topic(text, self.who["role"]) is False:
+        screened, on = await asyncio.gather(armor.screen_prompt(text, f"typed by {self.who['role']}"),
+                                            topic.on_topic(text, self.who["role"]))
+        if screened["ok"] is False:  # Model Armor (C18): never sent; if it can't be asked, the text goes on (logged)
+            await self.block(text, "typed", typed=True, reason="safety", reasons=screened["reasons"])
+            return
+        if on is False:
             await self.block(text, "typed", typed=True)
             return
         consent.heard(self.who["uid"], text)
@@ -172,14 +181,38 @@ class Guard:
             self.struck = exchange
             await self.block(text, source)
 
-    async def block(self, text: str, source: str, typed: bool = False) -> None:
+    def screen_caller(self, text: str) -> None:
+        """Model Armor on a caller's finished words (C18), in the background. Flagged → refused like an off-topic
+        request (same strikes, so two flagged turns end the call); if Model Armor can't be asked, the turn goes on."""
+        if self.who["role"] == "caller" and armor.enabled():
+            self._start(self._screen_caller(text, self.exchange_of("request")))
+
+    async def _screen_caller(self, text: str, exchange: int) -> None:
+        screened = await armor.screen_prompt(text, "caller")
+        if screened["ok"] is False and exchange != self.struck:
+            self.struck = exchange
+            await self.block(text, "caller", reason="safety", reasons=screened["reasons"])
+
+    def screen_reply(self, text: str) -> None:
+        """Model Armor on the agent's words after the turn (C18): logged and counted, never blocked (already spoken)."""
+        if armor.enabled() and text.strip():
+            self._start(self._screen_reply(text))
+
+    async def _screen_reply(self, text: str) -> None:
+        screened = await armor.screen_response(text, f"{self.who['role']} agent reply")
+        if screened["ok"] is False:
+            await asyncio.to_thread(armor.record, self.who, "agent reply", screened["reasons"], "logged (already spoken)",
+                                    text)
+
+    async def block(self, text: str, source: str, typed: bool = False, reason: str = "off_topic",
+                    reasons: list[str] | None = None) -> None:
         self.strikes += 1
         # Drop the reply to this request, whether it has started yet or not; a reply that already finished has
         # nothing left to drop (then only the refusal follows).
         self.blocking = (self.in_turn or self.awaiting_reply) and not typed
-        log.warning("off-topic %s blocked for %s/%s: %r", source, self.who["garage_id"], self.who["uid"], text[:120])
+        log.warning("%s %s blocked for %s/%s: %r", reason, source, self.who["garage_id"], self.who["uid"], text[:120])
         try:
-            await self.ws.send_json({"type": "blocked", "reason": "off_topic", "typed": typed})
+            await self.ws.send_json({"type": "blocked", "reason": reason, "typed": typed})
             open_ = True
         except Exception:
             open_ = False  # the caller already hung up: nobody left to refuse, but the owner's records still get it
@@ -187,7 +220,21 @@ class Guard:
             self.ending = self.who["role"] == "caller" and self.strikes >= config.TOPIC_STRIKES_TO_END_CALL
             note = topic.END_CALL_NOTE if self.ending else topic.REFUSAL_NOTE
             self.queue.send_content(types.Content(role="user", parts=[types.Part(text=note)]))
-        await asyncio.to_thread(self._record, text, source)  # after the refusal, so it isn't delayed
+        if reason == "safety":
+            await asyncio.to_thread(self._record_safety, text, source, reasons or [], typed)
+        else:
+            await asyncio.to_thread(self._record, text, source)  # after the refusal, so it isn't delayed
+
+    def _record_safety(self, text: str, source: str, reasons: list[str], typed: bool) -> None:
+        """Model Armor flag (C18): an "AI safety" line in the owner's feed, and on the Calls list for a caller."""
+        action = "not sent" if typed else "call ended" if self.ending else "refused"
+        armor.record(self.who, source, reasons, action, text)
+        if self.who["role"] == "caller":
+            try:
+                frontdesk.note_action(self.who, self.who["garage_id"],
+                                      "Call ended after a safety check" if self.ending else "Request failed a safety check")
+            except Exception:
+                log.exception("could not note a safety flag on the call")
 
     def _record(self, text: str, source: str) -> None:
         try:
@@ -199,6 +246,7 @@ class Guard:
 
     def heard(self, text: str) -> None:
         self.check(text, "request")
+        self.screen_caller(text)
         if self.exchange_of("request") == self.exchange:
             self.heard_now = True
             self.awaiting_reply = True
@@ -331,6 +379,7 @@ async def downstream(ws: WebSocket, events, who: dict, state: dict, queue=None, 
         if event.turn_complete:
             await ws.send_json({"type": "turn_complete"})
             check_language(queue, state, " ".join(heard), " ".join(said))
+            guard.screen_reply(" ".join(said))
             heard = []
         if event.interrupted or event.turn_complete:
             streamed = False

@@ -117,6 +117,30 @@ No Firestore composite indexes are needed: the reads stream a garage's collectio
 agent gets `mechanic_jobs`, `revenue_for` and `vehicle_last_visit` for "how many jobs did Raju finish this week?",
 "how much did we make this month?" and "when did MH12AB1234 last come in?".
 
+### Model Armor screening (C18)
+
+Google Cloud's Model Armor checks text for prompt injection and jailbreaks, malicious URLs, harmful content and
+sensitive data. `app/armor.py`: `screen_prompt(text, where)` (sanitizeUserPrompt) and `screen_response(text, where)`
+(sanitizeModelResponse) return `{ok, reasons}` and log every verdict; `ok` is `None` when Model Armor couldn't be
+asked. Called over REST at the regional endpoint `https://modelarmor.<location>.rep.googleapis.com/v1/<template>:...`
+with google-auth (already installed), on a small thread pool with a timeout. It is an extra layer next to the topic
+guard and the web-search consent check, using the same `gateway.Guard` points; it changes neither.
+
+| Where | When | Flagged | Model Armor down |
+|---|---|---|---|
+| Web-search results (`web_search_fixes`) | before the Live agent sees them | dropped: `found: false`, "results failed a safety check" | refused (fail closed) |
+| A front-desk caller's finished words | in the background, alongside the reply | refused like an off-topic request; same strikes, so the 2nd flag ends the call; noted on the Calls list | turn goes on, logged |
+| Typed text (all voice screens) | before it is sent, together with the topic check | never sent; the screen says "That can't be sent" | sent, logged |
+| Every agent's reply | after the turn | logged and counted only (it was already spoken) | logged |
+
+Each flag is an `armor_flagged` audit entry (owner's feed: "AI safety: flagged by Model Armor · where · filters · action").
+**Limitation:** spoken audio goes straight to Gemini Live, so speech can only be screened once its transcription
+arrives: the agent may already be answering, which is why a flagged caller turn is cut off and refused rather than
+stopped before Gemini hears it, and why mechanic and owner speech isn't screened (their typed text is).
+Settings: `MODEL_ARMOR_TEMPLATE` (full name; **empty = off**, no calls: tests and local dev), `MODEL_ARMOR_LOCATION`
+(default: from the template name), `MODEL_ARMOR_TIMEOUT_SECONDS` (3), `MODEL_ARMOR_WORKERS` (8 calls at once per
+instance; more go unchecked), `MODEL_ARMOR_MAX_CHARS` (4000). Setup: DEPLOY.md section 18.
+
 ### AI front desk: customers call the garage (C15)
 
 A customer calls and the front desk agent (`agent.build_front_desk_agent`, on `LIVE_MODEL`, its own tools in

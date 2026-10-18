@@ -207,6 +207,7 @@ async def web_search_fixes(question: str, vehicle: str, confirmed: bool, tool_co
             model = (await asyncio.to_thread(jobs.get_job, who, g, current))["vehicle"]
         found = await websearch.search(question, model)
         consent.clear(who["uid"])  # one yes, one search
+        found = await websearch.screen(who, found)  # Model Armor, before the agent sees the results (C18)
         return await asyncio.to_thread(websearch.record, who, g, _request_id(tool_context), question, model, found)
     except (core.Invalid, core.NotFound, core.Forbidden) as e:
         return {"error": str(e)}

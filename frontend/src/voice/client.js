@@ -119,7 +119,7 @@ export function createVoice({ onEvent, handsFree = true, lang = 'auto', getToken
       stopPlayback()
       said.agent = ''
       onEvent({ type: 'thinking', on: false })
-      return onEvent({ type: 'blocked', typed: !!msg.typed })
+      return onEvent({ type: 'blocked', typed: !!msg.typed, reason: msg.reason || 'off_topic' })
     }
     if (msg.type === 'ignored') { // push-to-talk turn with no speech: nothing was sent to the agent
       onEvent({ type: 'thinking', on: false })
