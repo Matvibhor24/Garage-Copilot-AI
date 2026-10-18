@@ -195,8 +195,8 @@ async def web_search_fixes(question: str, vehicle: str, confirmed: bool, tool_co
     # The model saying "confirmed" isn't enough: the manual must have come up empty and the mechanic's own next
     # words must be a yes (C19).
     if not consent.allowed(tool_context.state.get("uid", "")):
-        return {"error": 'not searched: the mechanic hasn\'t said yes yet. Look it up in the manual first; if it isn\'t '
-                         'there, ask "Shall I search online for known causes and fixes?" and wait for their answer'}
+        return {"error": 'not searched yet: the mechanic hasn\'t said yes. Ask "Shall I search online for <the problem>?" '
+                         'and wait for their answer. Nothing is broken; don\'t say the search failed.'}
     try:
         who, g = _who(tool_context)
         model = vehicle.strip()
@@ -349,7 +349,7 @@ def list_open_jobs(stage: str, mechanic: str, tool_context) -> dict:
         mechanic: mechanic's name; "" for all.
     """
     def call():
-        who, g = _who(tool_context, "owner")
+        who, g = _who(tool_context, "any")  # read-only: the mechanic agent has it too
         out = [_job_line(j) for j in jobs.list_jobs(who, g)]
         if stage:
             out = [j for j in out if j["stage"] == stage.strip().lower()]
@@ -510,7 +510,7 @@ OWNER_TOOLS = [today_summary, list_open_jobs, job_details, pending_approvals, lo
 
 
 FAST_TOOLS = [create_job, get_vehicle_history, update_stage, check_stock, log_part_used, close_job, lookup_manual,
-              web_search_fixes]
+              web_search_fixes, list_open_jobs]
 
 
 # ---------------------------------------------------------------- Front desk tools (C15: a customer calls the garage)

@@ -25,9 +25,13 @@ def needs_safety_note(question: str, points: list[str]) -> bool:
 
 
 def parse_points(text: str) -> list[str]:
-    """The sub-agent answers as "- point" lines; keep at most three, without the dashes."""
-    points = [re.sub(r"^\s*(?:[-*•]|\d+[.)])\s*", "", line).strip() for line in (text or "").splitlines()]
-    return [p for p in points if p][:3]
+    """The sub-agent answers as "- point" lines; keep at most three, without the dashes. When there are bullet lines,
+    a lead-in line around them ("Here are common causes:") is dropped."""
+    bullet = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s*")
+    lines = [line for line in (text or "").splitlines() if line.strip()]
+    if any(bullet.match(line) for line in lines):
+        lines = [line for line in lines if bullet.match(line)]
+    return [bullet.sub("", line).strip() for line in lines if bullet.sub("", line).strip()][:3]
 
 
 def site_names(chunks) -> list[str]:

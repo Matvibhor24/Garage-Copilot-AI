@@ -177,7 +177,8 @@ class Guard:
             self.check(said_so_far, "agent reply")
 
     async def _check(self, text: str, source: str, exchange: int) -> None:
-        if await topic.on_topic(text, self.who["role"]) is False and exchange != self.struck:
+        on = await topic.on_topic(text, self.who["role"], reply=source == "agent reply")
+        if on is False and exchange != self.struck:
             self.struck = exchange
             await self.block(text, source)
 

@@ -45,6 +45,21 @@ coding, essays, news, jokes, personal or medical advice, other businesses, or to
 OFF topic. When unsure, answer on topic.
 Reply with JSON only: {{"on_topic": true}} or {{"on_topic": false}}"""
 
+# The agent's own reply is judged by what it teaches or answers, not by its tone: an apology, a question back, a
+# refusal or "something went wrong" is never off-topic (judging replies with PROMPT blocked those, Oct 18).
+REPLY_PROMPT = """You check one reply that the voice assistant of a vehicle repair garage in India gave. The assistant
+may only help with {scope}.
+
+Reply (any language; may be Hindi, Marathi, English or Hinglish): "{text}"
+
+Is the assistant teaching, explaining or answering something unrelated to that scope (a school subject, general
+knowledge, coding, an essay, news, jokes, personal or medical advice, another business)? Only that is OFF topic.
+Apologies, "I couldn't do that", "something went wrong", questions back to the user ("shall I search online?",
+"did you say yes?"), offers to look something up in the manual or online, refusals, and anything about vehicles,
+jobs, parts, prices or manuals are ON topic: the conversation is a garage conversation unless the reply itself
+teaches an unrelated subject. When unsure, answer on topic.
+Reply with JSON only: {{"on_topic": true}} or {{"on_topic": false}}"""
+
 WORDS = re.compile(r"\w+", re.UNICODE)
 
 _pool = ThreadPoolExecutor(max_workers=config.TOPIC_WORKERS, thread_name_prefix="topic")
@@ -56,14 +71,14 @@ def worth_checking(text: str) -> bool:
     return len(WORDS.findall(text or "")) >= 3
 
 
-def _ask(text: str, role: str) -> bool | None:
+def _ask(text: str, role: str, reply: bool = False) -> bool | None:
     from google.genai import types
 
     from app.gemini import _get_client
 
     response = _get_client().models.generate_content(
         model=config.TOPIC_MODEL,
-        contents=[PROMPT.format(scope=SCOPE.get(role, SCOPE["mechanic"]), text=text.replace('"', "'")[:600])],
+        contents=[(REPLY_PROMPT if reply else PROMPT).format(scope=SCOPE.get(role, SCOPE["mechanic"]), text=text.replace('"', "'")[:600])],
         config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0,
                                            thinking_config=types.ThinkingConfig(thinking_budget=0),
                                            http_options=types.HttpOptions(
@@ -72,15 +87,16 @@ def _ask(text: str, role: str) -> bool | None:
     return verdict if isinstance(verdict, bool) else None
 
 
-async def on_topic(text: str, role: str) -> bool | None:
-    """True / False, or None when the guard is off, the text is too short to judge, or the check failed."""
+async def on_topic(text: str, role: str, reply: bool = False) -> bool | None:
+    """True / False, or None when the guard is off, the text is too short to judge, or the check failed.
+    reply=True: the text is the agent's own reply (judged with REPLY_PROMPT)."""
     if not config.TOPIC_GUARD or not worth_checking(text):
         return None
     if not _slots.acquire(blocking=False):
         log.warning("too many topic checks running; letting the turn through")
         return None
     try:
-        work = _pool.submit(_ask, text, role)
+        work = _pool.submit(_ask, text, role, reply)
     except Exception:
         _slots.release()
         raise

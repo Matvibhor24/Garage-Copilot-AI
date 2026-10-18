@@ -97,14 +97,51 @@ def test_a_yes_to_some_other_question_after_a_lookup_is_not_consent(garage):
     assert "hasn't said yes" in asyncio.run(tools.web_search_fixes("free play", "", True, ctx("w1")))["error"]
 
 
-def test_the_offer_is_made_once_per_lookup():
+def test_an_answered_offer_stays_put():
     """'Searching online now...' after the yes must not move the offer past the yes."""
-    consent.looked_up("m-raju", "hard start", now=100)
     consent.agent_said("m-raju", "Shall I search online?", now=101)
     consent.heard("m-raju", "haan", now=103)
     consent.agent_said("m-raju", "Okay, searching online now", now=104)
     assert consent.allowed("m-raju", now=105)
-    consent.agent_said("m-raju", "Shall I search online?", now=100 + consent.OFFER_SECONDS + 1)  # lookup too old
-    consent.clear("m-raju")
-    consent.agent_said("m-raju", "Shall I search online?", now=110)  # no lookup since the search: no offer
-    assert not consent.allowed("m-raju", now=111)
+
+
+def test_a_second_offer_can_be_answered_without_a_new_lookup():
+    """Live, Oct 18: after one search the agent asked again and every "haa" was refused, because the offer needed a
+    fresh manual lookup. Any offer in the agent's words now counts; the yes must still come after it."""
+    consent.agent_said("m-raju", "Shall I search online?", now=100)
+    consent.heard("m-raju", "haan", now=101)
+    consent.clear("m-raju")  # that search ran
+    consent.agent_said("m-raju", "क्या मैं फिर से ऑनलाइन सर्च करूँ?", now=110)
+    assert not consent.allowed("m-raju", now=111)  # the old yes doesn't count
+    consent.heard("m-raju", "Haa", now=112)
+    assert consent.allowed("m-raju", now=113)
+
+
+@pytest.mark.parametrize("words", ["Can you search on web how to fix the right indicator of Pulsar bike?",
+                                   "phir se search karo na", "ऑनलाइन सर्च करो", "Google it"])
+def test_the_mechanic_asking_for_a_search_is_their_yes(words):
+    consent.heard("m-raju", words, now=100)
+    assert consent.allowed("m-raju", now=101)
+    assert not consent.allowed("m-raju", now=100 + consent.OFFER_SECONDS + 1)
+
+
+@pytest.mark.parametrize("words", ["search mat karo", "don't search online", "ऑनलाइन मत देखो", "Ramesh is here"])
+def test_refusing_a_search_or_other_talk_is_not_asking(words):
+    consent.heard("m-raju", words, now=100)
+    assert not consent.allowed("m-raju", now=101)
+
+
+def test_a_no_after_asking_takes_it_back():
+    consent.heard("m-raju", "search karo", now=100)
+    consent.heard("m-raju", "nahi, rehne do", now=102)
+    assert not consent.allowed("m-raju", now=103)
+
+
+def test_asking_runs_one_search(garage):
+    consent.heard("m-raju", "Google karo, right indicator kaam nahi kar raha")
+    assert not consent.allowed("m-raju")  # "nahi" in the problem itself reads as a no: the agent asks instead
+    consent.heard("m-raju", "online search karo indicator fix")
+    out = asyncio.run(tools.web_search_fixes("indicator fix", "", True, ctx("w1")))
+    assert out["source"] == "web" and garage == ["indicator fix"]
+    again = asyncio.run(tools.web_search_fixes("indicator fix", "", True, ctx("w2")))
+    assert "hasn't said yes" in again["error"]

@@ -49,7 +49,7 @@ async def fake_gemini(state, queue, push_to_talk):
             yield Event(author="a", turn_complete=True)
 
 
-async def judge(text, role):
+async def judge(text, role, reply=False):
     return "photosynthesis" not in text and "essay" not in text
 
 
@@ -139,11 +139,11 @@ def test_the_check_itself(monkeypatch):
 
     real = importlib.reload(topic)  # the module function, not the fixture's stand-in
     monkeypatch.setattr(config, "TOPIC_GUARD", True)
-    monkeypatch.setattr(real, "_ask", lambda text, role: False)
+    monkeypatch.setattr(real, "_ask", lambda text, role, reply=False: False)
     assert asyncio.run(real.on_topic("explain photosynthesis to me", "mechanic")) is False
     assert asyncio.run(real.on_topic("haan ok", "mechanic")) is None  # too short to be a request: no call
 
-    def down(text, role):
+    def down(text, role, reply=False):
         raise RuntimeError("quota")
     monkeypatch.setattr(real, "_ask", down)
     assert asyncio.run(real.on_topic("explain photosynthesis to me", "mechanic")) is None  # fails open, logged
@@ -229,7 +229,7 @@ def test_one_off_topic_question_is_one_strike_even_when_its_reply_is_checked_too
     monkeypatch.setattr(config, "TOPIC_GUARD", True)
     verdicts = []
 
-    async def slow_judge(text, role):
+    async def slow_judge(text, role, reply=False):
         await until(lambda: verdicts)  # both checks come back after the turn is over
         return "photosynthesis" not in text
     monkeypatch.setattr(topic, "on_topic", slow_judge)
@@ -250,7 +250,7 @@ def test_a_refusal_that_interrupts_the_long_reply_is_not_blocked_again(fake_db, 
     seed.seed(fake_db)
     monkeypatch.setattr(config, "TOPIC_GUARD", True)
 
-    async def judge_(text, role):
+    async def judge_(text, role, reply=False):
         return "photosynthesis" not in text
     monkeypatch.setattr(topic, "on_topic", judge_)
 
@@ -274,7 +274,7 @@ def test_the_callers_goodbye_plays_before_the_call_is_closed(fake_db, monkeypatc
     monkeypatch.setattr(gateway.Guard, "GOODBYE_SECONDS", 0)
     playing = []
 
-    async def late_judge(text, role):
+    async def late_judge(text, role, reply=False):
         await until(lambda: playing)  # the reply is playing when the verdict lands
         return await judge(text, role)
     monkeypatch.setattr(topic, "on_topic", late_judge)
@@ -420,7 +420,7 @@ def test_typed_text_check_does_not_hold_up_the_mic(monkeypatch):
         def send_content(self, content, partial=False):
             sent.append("typed")
 
-    async def slow_judge(text, role):
+    async def slow_judge(text, role, reply=False):
         await until(lambda: "mic" in sent)  # the check is still running when the mic audio arrives
         return True
     monkeypatch.setattr(topic, "on_topic", slow_judge)
@@ -440,7 +440,7 @@ def test_a_check_cancelled_before_it_starts_gives_its_slot_back(monkeypatch):
     monkeypatch.setattr(real, "_slots", threading.BoundedSemaphore(2))
     busy = threading.Event()
     monkeypatch.setattr(real, "_pool", __import__("concurrent.futures").futures.ThreadPoolExecutor(max_workers=1))
-    monkeypatch.setattr(real, "_ask", lambda text, role: busy.wait(1) or True)
+    monkeypatch.setattr(real, "_ask", lambda text, role, reply=False: busy.wait(1) or True)
 
     async def two():  # the second check queues behind the first and times out before a thread picks it up
         return await asyncio.gather(real.on_topic("explain photosynthesis to me", "mechanic"),

@@ -106,3 +106,9 @@ def test_the_sub_agent_reads_points_and_site_names():
     assert out["points"] == ["Choke stuck: free it.", "Weak spark: check the plug.", "Old fuel: drain it."]
     assert out["sites"] == ["bikeservice.example", "forum.example"]
     assert out["suggestions_html"] == "<div>suggestions</div>"
+
+
+def test_a_lead_in_line_before_the_points_is_dropped():
+    text = "Here are common causes and fixes:\n- Burnt bulb: replace it.\n- Bad flasher relay.\n- Loose earth wire.\n- Fourth."
+    assert websearch.parse_points(text) == ["Burnt bulb: replace it.", "Bad flasher relay.", "Loose earth wire."]
+    assert websearch.parse_points("Just one line.") == ["Just one line."]

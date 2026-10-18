@@ -1,12 +1,13 @@
 """Web-search consent (C19): the search for known fixes runs only after the mechanic really said yes.
 
 `web_search_fixes` used to trust the model's `confirmed=True`, which only proves the model *claimed* consent. Now:
-1. `lookup_manual` by a mechanic records the lookup.
-2. The gateway passes on the agent's own words: once it talks about searching online after that lookup (when the
-   manual has nothing, or its passages don't answer the question), that is the offer.
-3. The gateway passes on what the mechanic actually said next (the input transcription, or typed text).
-4. The search runs only if there is a fresh offer (2 minutes) and the mechanic's words after it are a yes in English,
-   Hindi or Marathi (Latin or Devanagari) with no "no" in them.
+1. The gateway passes on the agent's own words: when it talks about searching online, that is the offer.
+2. The gateway passes on what the mechanic actually said (the input transcription, or typed text).
+3. The search runs only if there is a fresh offer (2 minutes) and the mechanic's words after it are a yes in English,
+   Hindi or Marathi (Latin or Devanagari) with no "no" in them, or if the mechanic asked for an online search in
+   their own words ("search karo", "Google it"), with no "no" in them.
+Oct 18: the offer used to need a fresh manual lookup first, so a second "shall I search online?" (or a mechanic
+asking for a search outright) could never be answered with a yes.
 
 Kept in memory per mechanic: a voice session stays on one Cloud Run instance for its whole WebSocket, and an offer
 is only good for two minutes anyway.
@@ -35,6 +36,7 @@ NO_PROBLEM = re.compile(rf"(?<![^{SEP}])(no (problem|problems|worries|issue|issu
 OFFER_WORDS = re.compile(r"search|online|internet|web|google|सर्च|ऑनलाइन|इंटरनेट|वेब|गूगल|शोध|खोज", re.I)
 
 _lookups: dict[str, dict] = {}  # mechanic uid -> {"question", "at"} of their last manual lookup
+_asked: dict[str, float] = {}  # mechanic uid -> when they asked for an online search themselves
 _offers: dict[str, dict] = {}  # mechanic uid -> {"question", "at"}
 _heard: dict[str, tuple[str, float]] = {}  # mechanic uid -> (last words, when)
 
@@ -60,27 +62,47 @@ def looked_up(uid: str, question: str, now: float | None = None) -> None:
 
 
 def agent_said(uid: str, text: str, now: float | None = None) -> None:
-    """The agent's words so far this turn. Talking about an online search after a fresh lookup is the offer; one
-    offer per lookup, so "Searching online now..." after the yes doesn't move it past the yes."""
+    """The agent's words so far this turn. Talking about an online search is the offer. An offer already answered
+    with a yes stays put, so "Searching online now..." after the yes doesn't move it past the yes."""
     now = time.time() if now is None else now
-    lookup, o = _lookups.get(uid), _offers.get(uid)
-    if (lookup and now - lookup["at"] <= OFFER_SECONDS and (not o or o["at"] < lookup["at"])
-            and OFFER_WORDS.search(text or "")):
-        offer(uid, lookup["question"], now)
+    if OFFER_WORDS.search(text or "") and not allowed(uid, now):
+        lookup = _lookups.get(uid)
+        offer(uid, lookup["question"] if lookup else "", now)
 
 
 def offer(uid: str, question: str, now: float | None = None) -> None:
     _offers[uid] = {"question": question, "at": time.time() if now is None else now}
 
 
+def _words(text: str) -> str:
+    return " " + " ".join(w for w in SPLIT.split(" ".join((text or "").replace("’", "'").split())) if w) + " "
+
+
+def _says_no(text: str) -> bool:
+    t = _words(NO_PROBLEM.sub(" ", text or ""))
+    return bool(NO.search(t)) or _has_words(t, NO_DEVANAGARI)
+
+
+def asks_to_search(text: str) -> bool:
+    """The mechanic asking for an online search outright ("search karo", "Google it", "ऑनलाइन देखो"), not refusing one."""
+    return bool(OFFER_WORDS.search(text or "")) and not _says_no(text)
+
+
 def heard(uid: str, text: str, now: float | None = None) -> None:
     if text and text.strip():
-        _heard[uid] = (text, time.time() if now is None else now)
+        now = time.time() if now is None else now
+        _heard[uid] = (text, now)
+        if asks_to_search(text):
+            _asked[uid] = now
+        elif _says_no(text):
+            _asked.pop(uid, None)  # "nahi, rehne do" after asking takes it back
 
 
 def allowed(uid: str, now: float | None = None) -> bool:
-    """A fresh offer, and the mechanic's words after it say yes."""
+    """The mechanic asked for a search in the last 2 minutes, or a fresh offer and their words after it say yes."""
     now = time.time() if now is None else now
+    if now - _asked.get(uid, float("-inf")) <= OFFER_SECONDS:
+        return True
     o = _offers.get(uid)
     if not o or now - o["at"] > OFFER_SECONDS:
         return False
@@ -91,6 +113,7 @@ def allowed(uid: str, now: float | None = None) -> bool:
 def clear(uid: str) -> None:
     _offers.pop(uid, None)
     _lookups.pop(uid, None)
+    _asked.pop(uid, None)
 
 
 def reset() -> None:
@@ -98,3 +121,4 @@ def reset() -> None:
     _offers.clear()
     _lookups.clear()
     _heard.clear()
+    _asked.clear()

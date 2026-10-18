@@ -49,11 +49,11 @@ def test_owner_agent_only_has_owner_tools(monkeypatch):
     assert owner.name == "owner_copilot" and owner.model == "test-live-model"
     names = {t.__name__ for t in owner.tools}
     assert names == {f.__name__ for f in tools.OWNER_TOOLS}
-    assert names & {f.__name__ for f in tools.FAST_TOOLS} == {"lookup_manual"}  # the one shared, read-only tool
+    assert names & {f.__name__ for f in tools.FAST_TOOLS} == {"lookup_manual", "list_open_jobs"}  # shared, read-only
     assert not any(isinstance(t, AgentTool) for t in owner.tools)
     mechanic = gateway.agent_for("mechanic")
     assert mechanic.name == "garage_copilot"
-    assert {getattr(t, "__name__", "") for t in mechanic.tools} & names == {"lookup_manual"}
+    assert {getattr(t, "__name__", "") for t in mechanic.tools} & names == {"lookup_manual", "list_open_jobs"}
     text = agent.owner_instruction(SimpleNamespace(state={"garage_name": "Shree Auto", "name": "Asha"}))
     assert "Asha" in text and "Never guess" in text
 

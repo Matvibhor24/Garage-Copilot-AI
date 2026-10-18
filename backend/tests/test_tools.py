@@ -89,3 +89,10 @@ def core_actor(state):
     from app.services import core
 
     return core.actor(state["garage_id"], state["uid"], state["role"], state["name"])
+
+
+def test_mechanic_can_list_open_jobs(state):
+    """Live, Oct 18: "How many jobs are open right now?" had no mechanic tool, so the agent tried vehicle history."""
+    tools.create_job("MH12 AB 1234", "Splendor Plus", "Ramesh", "", "clutch slipping", ctx("c1", state))
+    out = tools.list_open_jobs("", "", ctx("m1", state))
+    assert out["count"] == 1 and out["jobs"][0]["job_id"] == "J-1042"
