@@ -56,6 +56,4 @@ Notes: `DB_BACKEND=memory` can't be seeded from a separate process, so use the e
 ## 6. Repo and accounts
 
 - **Make the repo public before Oct 18** (required): repo Settings → General → Danger Zone → Change visibility.
-- **The personal access token** must not expire before Oct 18.
-- **Git commit email** on Gaurav's Mac is `96624731+gauravmkale@users.noreply.github.com`; make sure it is on the GitHub account, or commits won't link to the profile.
-- **Gaurav's Mac only:** `~/.npm` has files owned by root, so `npm install` fails. Fix once with `sudo chown -R $(id -u):$(id -g) ~/.npm`.
+- **If `npm install` fails with permission errors**, `~/.npm` may have files owned by root. Fix once with `sudo chown -R $(id -u):$(id -g) ~/.npm`.
